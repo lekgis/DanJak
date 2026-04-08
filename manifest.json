@@ -1,8 +1,8 @@
 {
-  "name": "ด่านจาก",
-  "short_name": "ด่านจาก",
-  "description": "แอปสำรวจสิ่งปลูกสร้างและป้าย",
-  "start_url": ".",
+  "name": "ปะเคียบ",
+  "short_name": "ปะเคียบ",
+  "description": "แอปสำรวจแผนที่ภาษี",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
