@@ -1,0 +1,2354 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>นำเข้าข้อมูลและรูปภาพ - กูเกิ้ลไดร์</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- ✅ เพิ่มใน <head> ของ import.html -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    
+    <style>
+        body { font-family: 'Sarabun', 'Tahoma', sans-serif; }
+        .progress-bar { transition: width 0.3s ease; }
+        .log-entry { font-size: 12px; padding: 4px 8px; border-bottom: 1px solid #eee; }
+        .log-success { color: #16a34a; }
+        .log-error { color: #dc2626; }
+        .log-skip { color: #6b7280; }
+        .log-info { color: #2563eb; }
+        @media (max-width: 480px) {
+            .grid-cols-1 > div { margin-bottom: 1rem; }
+            #log-container { max-height: 48vh; } /* ลดความสูงล็อกบนมือถือ */
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4">
+    <div class="max-w-4xl mx-auto">
+        <!-- Header -->
+        <div class="bg-white rounded-xl shadow p-4 mb-4 flex items-center justify-between">
+            <h1 class="text-xl font-bold text-blue-900">📥 นำเข้าข้อมูล และรูปภาพ</h1>
+            <button onclick="window.close()" class="p-2 hover:bg-gray-100 rounded-full">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <!-- ============================================ -->
+        <!-- ✅ ส่วนเครื่องมือจัดการเจ้าของ (2 คอลัมน์) ✅ -->
+        <!-- ============================================ -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            <!-- คอลัมน์ซ้าย: นำเข้าเจ้าของจาก Excel/CSV -->
+            <div class="p-4 bg-white rounded-lg shadow border border-gray-200">
+                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    <i data-lucide="upload" class="w-4 h-4"></i>
+                    📥 นำเข้าเจ้าของ
+                </h3>
+                
+                <p class="text-xs text-gray-600 mb-3">
+                    จากไฟล์ Excel/CSV<br>
+                    <code>fname</code> + <code>lname <code>จะข้ามชื่อที่มีในระบบแล้ว ไม่นำเข้าซ้ำ</code>
+                </p>
+                
+                <div class="space-y-2">
+                    <input type="file" id="owner-import-file" 
+                           accept=".xlsx,.xls,.csv" 
+                           class="hidden">
+                    <button type="button" onclick="document.getElementById('owner-import-file').click()"
+                            class="w-full py-2 bg-rose-500 text-white rounded font-bold text-sm hover:bg-gray-600 transition flex items-center justify-center gap-1">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                        เลือกไฟล์เจ้าของ
+                    </button>
+                    
+                    <button type="button" id="btn-owner-import-start" 
+                            onclick="startOwnerImport()"
+                            class="w-full py-2 bg-green-500 text-white rounded font-bold text-sm hover:bg-gray-600 transition flex items-center justify-center gap-1"
+                            disabled>
+                        ▶️ เริ่มนำเข้า
+                    </button>
+
+                    <!-- ✅ ปุ่มแสดงสถานะคิวนำเข้า -->
+                    <button id="btn-show-import-queue" onclick="showImportQueueModal()" 
+                            class="w-full mt-2 py-2 bg-gray-100 text-gray-700 rounded font-bold text-sm hover:bg-gray-200 transition flex items-center justify-center gap-1 relative">
+                        <i data-lucide="clock" class="w-4 h-4"></i>
+                        คิวนำเข้ารอส่ง
+                        <span id="import-queue-badge" class="hidden absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center">0</span>
+                    </button>
+
+                    <!-- ✅ ✅ ✅ แสดงชื่อไฟล์ที่เลือก (ในกล่องเลย ไม่ต้องเลื่อน) ✅ ✅ ✅ -->
+                    <div id="owner-selected-file" class="hidden mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-xs text-blue-800 font-medium truncate flex-1" id="owner-selected-filename"></span>
+                            <button type="button" onclick="clearSelectedFile()" 
+                                    class="text-blue-600 hover:text-blue-800 p-1 hover:bg-blue-100 rounded transition"
+                                    title="ล้างไฟล์ที่เลือก">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    
+                    <!-- แถบความคืบหน้า -->
+                    <div id="owner-import-progress" class="hidden">
+                        <div class="flex justify-between text-[10px] text-gray-600 mb-1">
+                            <span>ความคืบหน้า</span>
+                            <span id="owner-import-percent">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-1.5">
+                            <div id="owner-import-bar" class="bg-blue-600 h-1.5 rounded-full transition-all" style="width: 0%"></div>
+                        </div>
+                        <div class="flex gap-2 text-[10px] text-gray-500 mt-1">
+                            <span>✅ <span id="owner-import-success">0</span></span>
+                            <span>⏭️ <span id="owner-import-skipped">0</span></span>
+                            <span>❌ <span id="owner-import-failed">0</span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- คอลัมน์ขวา: สแกนเอกสารเจ้าของ -->
+            <div class="p-4 bg-white rounded-lg shadow border border-gray-200">
+                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    <i data-lucide="scan" class="w-4 h-4"></i>
+                    📄 สแกนเอกสารเจ้าของ
+                </h3>
+                
+                <p class="text-xs text-gray-600 mb-3">
+                    สแกนบัตร ปชช./เอกสาร<br>
+                    ด้วย Gemini AI
+                </p>
+                
+                <a href="https://gemini.google.com/share/8b926a6aaa7f" 
+                   target="_blank"
+                   class="w-full py-2 bg-purple-600 text-white rounded font-bold text-sm hover:bg-gray-600 transition flex items-center justify-center gap-1">
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                    เปิดเครื่องมือสแกน
+                </a>
+                
+                <p class="text-[10px] text-gray-500 mt-2 text-center">
+                    เปิดในแท็บใหม่
+                </p>
+            </div>
+            
+        </div>
+
+
+        <!-- Selection Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 mb-3">
+            <!-- Building Import -->
+            <div class="bg-white rounded-xl shadow p-5 border-2 border-orange-200 hover:border-orange-400 transition">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                        <i data-lucide="home" class="w-6 h-6 text-orange-600"></i>
+                    </div>
+                    <h2 class="font-bold text-lg">สิ่งปลูกสร้าง</h2>
+                </div>
+                <p class="text-sm text-gray-600 mb-4">
+                    นำเข้ารูปภาพโดยจับคู่กับ <code class="bg-gray-100 px-1 rounded">building_c</code>
+                </p>
+                <input type="file" id="building-folder" webkitdirectory directory multiple 
+                    class="hidden" accept="image/*" onchange="handleFolderSelect(this, 'building')">
+                <button onclick="document.getElementById('building-folder').click()"
+                    class="w-full bg-orange-500 hover:bg-gray-600 text-white py-3 rounded-lg font-bold transition flex items-center justify-center gap-2">
+                    <i data-lucide="folder-open" class="w-5 h-5"></i>
+                    เลือกโฟลเดอร์รูปสิ่งปลูกสร้าง
+                </button>
+                <!-- ✅ ในการ์ดสิ่งปลูกสร้าง → เพิ่มหลังปุ่ม "เลือกโฟลเดอร์รูปสิ่งปลูกสร้าง" -->
+
+                <!-- ✅ ปุ่มนำเข้าข้อมูลสิ่งปลูกสร้างจาก Excel/CSV -->
+                <input type="file" id="building-data-file" accept=".xlsx,.xls,.csv" class="hidden">
+                <button type="button" onclick="document.getElementById('building-data-file').click()"
+                        class="w-full mt-2 py-2 bg-blue-600 text-white rounded font-bold text-sm hover:bg-gray-600 transition flex items-center justify-center gap-1">
+                    <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                    นำเข้าข้อมูลสิ่งปลูกสร้าง
+                </button>
+                
+                <!-- ✅ แถบความคืบหน้าสำหรับนำเข้าข้อมูล -->
+                <div id="building-data-progress" class="hidden mt-3 p-3 bg-gray-50 rounded border">
+                    <div class="flex justify-between text-xs text-gray-600 mb-1">
+                        <span id="building-data-title">กำลังประมวลผล...</span>
+                        <span id="building-data-percent">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div id="building-data-bar" class="bg-blue-600 h-2 rounded-full transition-all" style="width: 0%"></div>
+                    </div>
+                    <div class="flex gap-3 text-xs text-gray-500 mt-2">
+                        <span>✅ สำเร็จ: <b id="bd-success">0</b></span>
+                        <span>⏭️ ข้าม: <b id="bd-skip">0</b></span>
+                        <span>❌ ผิดพลาด: <b id="bd-error">0</b></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sign Import -->
+            <div class="bg-white rounded-xl shadow p-5 border-2 border-green-200 hover:border-green-400 transition">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                        <i data-lucide="map-pin" class="w-6 h-6 text-green-600"></i>
+                    </div>
+                    <h2 class="font-bold text-lg">ป้าย</h2>
+                </div>
+                <p class="text-sm text-gray-600 mb-4">
+                    นำเข้ารูปภาพโดยจับคู่กับ <code class="bg-gray-100 px-1 rounded">s_code</code>
+                </p>
+                <input type="file" id="sign-folder" webkitdirectory directory multiple 
+                    class="hidden" accept="image/*" onchange="handleFolderSelect(this, 'sign')">
+                <button onclick="document.getElementById('sign-folder').click()"
+                    class="w-full bg-green-500 hover:bg-gray-600 text-white py-3 rounded-lg font-bold transition flex items-center justify-center gap-2">
+                    <i data-lucide="folder-open" class="w-5 h-5"></i>
+                    เลือกโฟลเดอร์รูปป้าย
+                </button>
+                <!-- ✅ ในการ์ดป้าย → เพิ่มหลังปุ่ม "เลือกโฟลเดอร์รูปป้าย" -->
+                <!-- ปุ่มเลือกไฟล์ข้อมูลป้ายจาก Excel/CSV -->
+                <input type="file" id="sign-data-file" accept=".xlsx,.xls,.csv" class="hidden">
+                <button type="button" onclick="document.getElementById('sign-data-file').click()"
+                        class="w-full mt-2 py-2 bg-blue-600 text-white rounded font-bold text-sm hover:bg-gray-600 transition flex items-center justify-center gap-1">
+                    <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                    นำเข้าข้อมูลป้าย
+                </button>
+                <!-- ✅ แถบความคืบหน้าสำหรับนำเข้าข้อมูลป้าย -->
+                <div id="sign-data-progress" class="hidden mt-3 p-3 bg-gray-50 rounded border">
+                    <div class="flex justify-between text-xs text-gray-600 mb-1">
+                        <span id="sign-data-title">กำลังประมวลผล...</span>
+                        <span id="sign-data-percent">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div id="sign-data-bar" class="bg-green-600 h-2 rounded-full transition-all" style="width: 0%"></div>
+                    </div>
+                    <div class="flex gap-3 text-xs text-gray-500 mt-2">
+                        <span>✅ สำเร็จ: <b id="sd-success">0</b></span>
+                        <span>⏭️ ข้าม: <b id="sd-skip">0</b></span>
+                        <span>❌ ผิดพลาด: <b id="sd-error">0</b></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ✅ Progress Section (อยู่นอก max-w-4xl) -->
+    <div id="progress-section" class="bg-white rounded-xl shadow p-4 mb-4 hidden">
+        <div class="flex items-center justify-between mb-2">
+            <span class="font-bold text-sm" id="progress-title">กำลังประมวลผล...</span>
+            <span class="text-sm text-gray-600" id="progress-percent">0%</span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-3 mb-3">
+            <div id="progress-bar" class="progress-bar bg-blue-600 h-3 rounded-full" style="width: 0%"></div>
+        </div>
+        <div class="flex gap-4 text-xs text-gray-600">
+            <span>✅ สำเร็จ: <b id="count-success" class="text-green-600">0</b></span>
+            <span>⏭️ ข้าม: <b id="count-skip" class="text-gray-500">0</b></span>
+            <span>❌ ล้มเหลว: <b id="count-error" class="text-red-600">0</b></span>
+        </div>
+    </div>
+
+    <!-- ✅ Log Section (อยู่นอก max-w-4xl) -->
+    <div class="bg-white rounded-xl shadow p-4">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-sm">📋 บันทึกการทำงาน</h3>
+            <button onclick="clearLog()" class="text-xs text-blue-600 hover:underline">ล้าง</button>
+        </div>
+        <div id="log-container" class="max-h-64 overflow-y-auto border rounded bg-gray-50 p-2 text-xs">
+            <div class="log-entry log-info">พร้อมเริ่มนำเข้ารูปภาพ...</div>
+        </div>
+    </div>
+    <!-- ✅ ✅ ✅ ลบ </div> เกินมา 2 ตัวตรงนี้ ✅ ✅ ✅ -->
+
+    <!-- ✅ Modal แสดงคิวนำเข้า (ท้ายสุด ก่อน </body>) -->
+    <div id="import-queue-modal" class="fixed inset-0 z-[5000] hidden">
+        <div class="absolute inset-0 bg-black/50" onclick="hideImportQueueModal()"></div>
+        <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl p-4 w-80 max-h-[80vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="font-bold text-sm">คิวนำเข้ารอส่ง</h3>
+                <button onclick="hideImportQueueModal()" class="p-1 hover:bg-gray-100 rounded">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div id="import-queue-list" class="space-y-2 text-xs"></div>
+            <div class="mt-3 flex gap-2">
+                <button onclick="processImportQueue(); hideImportQueueModal();" 
+                        class="flex-1 py-2 bg-blue-600 text-white rounded text-xs font-bold">
+                    ส่งตอนนี้
+                </button>
+                <button onclick="clearImportQueue(); hideImportQueueModal();" 
+                        class="flex-1 py-2 bg-red-500 text-white rounded text-xs font-bold">
+                    ล้างคิว
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // ✅ ดึงพารามิเตอร์จาก URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const SCRIPT_URL = decodeURIComponent(urlParams.get('scriptUrl') || '');
+        const SPREADSHEET_ID = urlParams.get('spreadsheetId') || '16FHHMJzbyglTTIShbZIQvubbCGd2YP-qH94zL-XlxXk';
+        
+        // ✅ ตัวแปรสถานะ
+        let isProcessing = false;
+        let stats = { success: 0, skip: 0, error: 0, total: 0 };
+        let existingCodes = { building: new Set(), sign: new Set() };
+        
+        // ✅ ============================================
+        // ✅ ระบบนำเข้าเจ้าของจาก Excel/CSV
+        // ✅ ============================================
+
+        let ownerImportData = [];
+        let ownerImportStats = { success: 0, skipped: 0, failed: 0, total: 0 };
+        let existingOwners = new Set();
+
+        // ✅ อ่านไฟล์ Excel/CSV
+        async function readOwnerImportFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        let rows = [];
+                        
+                        if (file.name.endsWith('.csv')) {
+                            const text = new TextDecoder().decode(data);
+                            rows = text.split('\n').map(line => {
+                                const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+                                return cols;
+                            }).filter(row => row.length > 1 && row.some(c => c));
+                        } else {
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                            rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                        }
+                        
+                        const headers = rows[0].map(h => String(h).trim().toLowerCase());
+                        const requiredCols = ['fname', 'lname'];
+                        const missingCols = requiredCols.filter(col => !headers.includes(col));
+                        
+                        if (missingCols.length > 0) {
+                            throw new Error(`ขาดคอลัมน์จำเป็น: ${missingCols.join(', ')}`);
+                        }
+                        
+                        const keyMap = {
+                            'pop': ['pop', 'id_card', 'citizen_id', 'บัตรประชาชน'],
+                            'title': ['title', 'prefix', 'คำนำหน้า'],
+                            'fname': ['fname', 'first_name', 'firstname', 'ชื่อ'],
+                            'lname': ['lname', 'last_name', 'lastname', 'นามสกุล'],
+                            'h_no': ['h_no', 'house_no', 'บ้านเลขที่'],
+                            'moo': ['moo', 'หมู่'],
+                            'village': ['village', 'หมู่บ้าน'],
+                            'soi': ['soi', 'ซอย'],
+                            'road': ['road', 'ถนน'],
+                            'tambol': ['tambol', 'ตำบล'],
+                            'amphoe': ['amphoe', 'อำเภอ'],
+                            'changwat': ['changwat', 'จังหวัด'],
+                            'tel': ['tel', 'phone', 'เบอร์โทร']
+                        };
+                        
+                        const result = [];
+                        for (let i = 1; i < rows.length; i++) {
+                            const row = rows[i];
+                            if (!row || row.every(c => !c)) continue;
+                            
+                            const obj = {};
+                            headers.forEach((h, idx) => {
+                                let foundKey = null;
+                                for (const [stdKey, aliases] of Object.entries(keyMap)) {
+                                    if (aliases.includes(h)) { foundKey = stdKey; break; }
+                                }
+                                if (foundKey) obj[foundKey] = String(row[idx] || '').trim();
+                            });
+                            
+                            if (obj.fname && obj.lname) result.push(obj);
+                        }
+                        resolve(result);
+                    } catch (err) { reject(err); }
+                };
+                reader.onerror = () => reject(new Error('อ่านไฟล์ล้มเหลว'));
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        // ✅ ดึงรายชื่อเจ้าของที่มีแล้วในระบบ
+        async function fetchExistingOwners() {
+            try {
+                const response = await fetch(`${SCRIPT_URL}?action=getData&type=owner`);
+                const data = await response.json();
+                const owners = data.owners || [];
+                existingOwners = new Set(
+                    owners.map(o => `${(o.fname||'').toLowerCase()}|${(o.lname||'').toLowerCase()}`)
+                );
+                addLog(`✅ โหลดรายชื่อเจ้าของที่มีแล้ว: ${existingOwners.size} รายชื่อ`, 'info');
+                return true;
+            } catch (err) {
+                addLog(`❌ โหลดรายชื่อเจ้าของล้มเหลว: ${err.message}`, 'error');
+                return false;
+            }
+        }
+
+        // ✅ เริ่มกระบวนการนำเข้า
+        async function startOwnerImport() {
+            const fileInput = document.getElementById('owner-import-file');
+            const file = fileInput.files[0];
+            
+            if (!file) { addLog('⚠️ กรุณาเลือกไฟล์ก่อน', 'warning'); return; }
+            
+            document.getElementById('owner-import-progress').classList.remove('hidden');
+            document.getElementById('btn-owner-import-start').disabled = true;
+            
+            try {
+                // ✅ 1. อ่านไฟล์
+                addLog('📖 กำลังอ่านไฟล์...', 'info');
+                ownerImportData = await readOwnerImportFile(file);
+                if (ownerImportData.length === 0) throw new Error('ไม่พบข้อมูลในไฟล์');
+                
+                // ✅ ✅ ✅ กรองข้อมูลซ้ำภายในไฟล์ ✅ ✅ ✅
+                addLog('🔍 กำลังคัดกรองข้อมูลซ้ำในไฟล์...', 'info');
+                const originalCount = ownerImportData.length;
+                ownerImportData = deduplicateOwnerData(ownerImportData);
+                const afterDedupCount = ownerImportData.length;
+                const removedCount = originalCount - afterDedupCount;
+                
+                if (removedCount > 0) {
+                    addLog(`✅ คัดกรองซ้ำในไฟล์: ลดจาก ${originalCount} → ${afterDedupCount} รายการ (ลบ ${removedCount} รายการที่ซ้ำ)`, 'info');
+                } else {
+                    addLog(`✅ ไม่พบข้อมูลซ้ำในไฟล์: ${afterDedupCount} รายการ`, 'info');
+                }
+                
+                ownerImportStats = { success: 0, skipped: 0, failed: 0, total: ownerImportData.length };
+                
+                // ✅ 2. ดึงรายชื่อที่มีแล้วในระบบ
+                addLog('🔍 ตรวจสอบรายชื่อที่มีในระบบ...', 'info');
+                await fetchExistingOwners();
+                
+                // ✅ 3. ประมวลผลทีละรายการ (ใช้คิว)
+                for (let i = 0; i < ownerImportData.length; i++) {
+                    const item = ownerImportData[i];
+                    const key = `${item.fname.toLowerCase()}|${item.lname.toLowerCase()}`;
+                    
+                    // ✅ เช็คซ้ำกับฐานข้อมูล: ถ้ามีแล้ว → ข้าม
+                    if (existingOwners.has(key)) {
+                        ownerImportStats.skipped++;
+                        updateOwnerImportProgress();
+                        continue;
+                    }
+                    
+                    // ✅ เตรียมข้อมูลสำหรับบันทึก
+                    const newOwner = {
+                        pop: item.pop || '', title: item.title || '', fname: item.fname, lname: item.lname,
+                        h_no: item.h_no || '', moo: item.moo || '', village: item.village || '',
+                        soi: item.soi || '', road: item.road || '', tambol: item.tambol || '',
+                        amphoe: item.amphoe || '', changwat: item.changwat || '', tel: item.tel || '',
+                        date_added: formatThaiDateTimeBE(new Date()),
+                        update: formatThaiDateTimeBE(new Date()),
+                        id: `owner_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+                    };
+                    
+                    // ✅ เช็คออฟไลน์ → เพิ่มเข้าคิว
+                    if (!navigator.onLine) {
+                        addToImportQueue('owner', newOwner);
+                        ownerImportStats.success++;
+                        addLog(`📥 ออฟไลน์: บันทึกคิว "${item.fname} ${item.lname}"`, 'info');
+                        updateOwnerImportProgress();
+                        continue;
+                    }
+
+                    // ออนไลน์ → ส่งทันที (โค้ดเดิม)
+                    try {
+                        const formData = new FormData();
+                        formData.append('action', 'quickAdd');
+                        formData.append('type', 'owner');
+                        formData.append('payload', JSON.stringify(newOwner));
+                        
+                        const res = await fetch(SCRIPT_URL, { method: 'POST', body: formData });
+                        const result = await res.json();
+                        
+                        if (result.status === 200) ownerImportStats.success++;
+                        else { ownerImportStats.failed++; addLog(`❌ "${item.fname} ${item.lname}": ${result.message}`, 'error'); }
+                    } catch (err) {
+                        ownerImportStats.failed++;
+                        // ✅ ถ้าล้มเหลวเพราะออฟไลน์ → เพิ่มเข้าคิวสำรอง
+                        if (!navigator.onLine) {
+                            addToImportQueue('owner', newOwner);
+                            ownerImportStats.success++;
+                        }
+                        addLog(`❌ "${item.fname} ${item.lname}": ${err.message}`, 'error');
+                    }
+                    
+                    updateOwnerImportProgress();
+                    if (i % 10 === 0) await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                addLog(`✅ เสร็จสิ้น: สำเร็จ ${ownerImportStats.success}, ข้าม ${ownerImportStats.skipped}, ล้มเหลว ${ownerImportStats.failed}`, 'success');
+            } catch (err) {
+                addLog(`❌ นำเข้าล้มเหลว: ${err.message}`, 'error');
+            } finally {
+                document.getElementById('btn-owner-import-start').disabled = false;
+            }
+        }
+
+
+
+
+
+        function clearImportQueue() {
+            if (confirm('ล้างคิวนำเข้าทั้งหมด?')) {
+                importQueue = [];
+                saveImportQueue();
+                updateImportQueueBadge();
+                showNotificationLeft('✅ ล้างคิวแล้ว', 'success');
+            }
+        }
+
+        // ✅ อัปเดตแถบความคืบหน้า
+        function updateOwnerImportProgress() {
+            const { success, skipped, failed, total } = ownerImportStats;
+            const processed = success + skipped + failed;
+            const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+            document.getElementById('owner-import-percent').textContent = `${percent}%`;
+            document.getElementById('owner-import-bar').style.width = `${percent}%`;
+            document.getElementById('owner-import-success').textContent = success;
+            document.getElementById('owner-import-skipped').textContent = skipped;
+            document.getElementById('owner-import-failed').textContent = failed;
+        }
+
+        // ✅ ล้างค่าพร้อมเริ่มใหม่
+        function resetOwnerImport() {
+            document.getElementById('owner-import-file').value = '';
+            document.getElementById('owner-import-progress').classList.add('hidden');
+            document.getElementById('owner-import-bar').style.width = '0%';
+            document.getElementById('owner-import-percent').textContent = '0%';
+            document.getElementById('owner-import-success').textContent = '0';
+            document.getElementById('owner-import-skipped').textContent = '0';
+            document.getElementById('owner-import-failed').textContent = '0';
+            ownerImportData = [];
+            ownerImportStats = { success: 0, skipped: 0, failed: 0, total: 0 };
+            existingOwners.clear();
+            document.getElementById('btn-owner-import-start').disabled = true;
+        }
+
+        // ✅ ฟังก์ชันจัดรูปแบบวันที่ไทย (ถ้ายังไม่มี)
+        function formatThaiDateTimeBE(dateValue) {
+            try {
+                const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+                if (isNaN(date.getTime())) return '';
+                const thaiTime = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+                const yearBE = thaiTime.getFullYear() + 543;
+                const month = String(thaiTime.getMonth() + 1).padStart(2, '0');
+                const day = String(thaiTime.getDate()).padStart(2, '0');
+                const hours = String(thaiTime.getHours()).padStart(2, '0');
+                const minutes = String(thaiTime.getMinutes()).padStart(2, '0');
+                const seconds = String(thaiTime.getSeconds()).padStart(2, '0');
+                return `${yearBE}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+            } catch { return ''; }
+        }
+
+        // ✅ โหลดข้อมูลรหัสที่มีอยู่แล้วจากเซิร์ฟเวอร์
+        async function loadExistingCodes(type) {
+            try {
+                addLog(`🔄 โหลดข้อมูล${type === 'building' ? 'สิ่งปลูกสร้าง' : 'ป้าย'}ที่มีอยู่...`, 'info');
+                
+                const response = await fetch(`${SCRIPT_URL}?action=getData`);
+                const data = await response.json();
+                
+                const records = type === 'building' ? data.buildings : data.signs;
+                const codeField = type === 'building' ? 'building_c' : 's_code';
+                
+                records.forEach(r => {
+                    if (r[codeField] && r[codeField].trim() !== '') {
+                        existingCodes[type].add(r[codeField].trim());
+                    }
+                });
+                
+                addLog(`✅ พบรหัส${type === 'building' ? 'สิ่งปลูกสร้าง' : 'ป้าย'}ที่มีอยู่: ${existingCodes[type].size} รหัส`, 'success');
+                return true;
+            } catch (err) {
+                addLog(`❌ โหลดข้อมูลล้มเหลว: ${err.message}`, 'error');
+                return false;
+            }
+        }
+        
+        // ✅ จัดการเมื่อเลือกโฟลเดอร์
+        // ✅ ✅ ✅ แก้: ล้างล็อก + รีเซ็ตเมื่อเลือกโฟลเดอร์ ✅ ✅ ✅
+        async function handleFolderSelect(input, type) {
+            // ✅ ข้อ 1: ล้างล็อกอัตโนมัติ
+            clearLog();
+            
+            // ✅ ข้อ 2: รีเซ็ต progress bar ของรูปภาพ
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-percent').textContent = '0%';
+            document.getElementById('count-success').textContent = '0';
+            document.getElementById('count-skip').textContent = '0';
+            document.getElementById('count-error').textContent = '0';
+
+            // ✅ ✅ ✅ เพิ่มบรรทัดนี้ตรงนี้ (ไม่จำเป็นแต่ดี) ✅ ✅ ✅
+            document.getElementById('progress-title').textContent = 'กำลังประมวลผล...';
+
+            if (isProcessing) {
+                alert('กำลังประมวลผลอยู่ กรุณารอจนเสร็จสิ้น');
+                input.value = '';
+                return;
+            }
+            
+            const files = Array.from(input.files).filter(f => 
+                /\.(jpg|jpeg|png|gif)$/i.test(f.name)
+            );
+            
+            if (files.length === 0) {
+                alert('ไม่พบไฟล์รูปภาพในโฟลเดอร์ที่เลือก');
+                input.value = '';
+                return;
+            }
+            
+            // โหลดข้อมูลรหัสที่มีอยู่ก่อนเริ่ม
+            if (!await loadExistingCodes(type)) {
+                if (!confirm('ไม่สามารถโหลดข้อมูลรหัสได้ ต้องการดำเนินการต่อหรือไม่? (อาจจับคู่ไม่ถูกต้อง)')) {
+                    input.value = '';
+                    return;
+                }
+            }
+            
+            isProcessing = true;
+            stats = { success: 0, skip: 0, error: 0, total: files.length };
+            
+            // แสดงส่วนความคืบหน้า
+            document.getElementById('progress-section').classList.remove('hidden');
+            document.getElementById('progress-title').textContent = 
+                `กำลังประมวลผล ${type === 'building' ? 'สิ่งปลูกสร้าง' : 'ป้าย'}...`;
+            
+            addLog(`📁 พบไฟล์รูปภาพ ${files.length} ไฟล์ เริ่มประมวลผล...`, 'info');
+            
+            // ประมวลผลไฟล์ทีละไฟล์
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                
+                // ✅ เช็คออฟไลน์ → เพิ่มเข้าคิว
+                if (!navigator.onLine) {
+                    const codePart = file.name.length >= 11 ? file.name.substring(0, 11).replace(/[^a-zA-Z0-9\-]/g, '') : '';
+                    const rowData = {
+                        [type === 'building' ? 'building_c' : 's_code']: codePart,
+                        check: 'ถ่ายรูปแล้ว', picture: file.name,
+                        date_added: formatThaiDateTimeBE(new Date()),
+                        update: formatThaiDateTimeBE(new Date())
+                    };
+                    const base64 = await fileToBase64(file);
+                    addToImportQueue(type, rowData, base64, file.name);
+                    stats.success++;
+                    addLog(`📥 ออฟไลน์: บันทึกคิว "${file.name}"`, 'info');
+                    updateProgress(i + 1, files.length);
+                    continue;
+                }
+                
+                await processImageFile(file, type, i + 1, files.length);
+                updateProgress(i + 1, files.length);
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // เสร็จสิ้น
+            addLog(`🎉 เสร็จสิ้น! สำเร็จ: ${stats.success}, ข้าม: ${stats.skip}, ล้มเหลว: ${stats.error}`, 'success');
+            document.getElementById('progress-title').textContent = '✅ เสร็จสิ้น';
+            
+            isProcessing = false;
+            input.value = ''; // รีเซ็ต input
+            
+            // แจ้งเตือนเมื่อเสร็จ
+            if (stats.success > 0) {
+                alert(`✅ นำเข้าสำเร็จ ${stats.success} รูปจาก ${stats.total} รูป`);
+            }
+        }
+        
+        // ✅ ✅ ✅ แก้ฟังก์ชัน processImageFile ✅ ✅ ✅
+        async function processImageFile(file, type, currentIndex, totalFiles) {
+            const fileName = file.name;
+            
+            // ✅ ข้อ 1: ตรวจสอบชื่อรูป 11 อักษรแรก
+            const codePart = fileName.length >= 11 ? fileName.substring(0, 11) : fileName;
+            const cleanCode = codePart.replace(/\.[^/.]+$/, ""); // ตัดนามสกุลออกถ้ามี
+            
+            addLog(`🔍 [${currentIndex}/${totalFiles}] ${fileName} → รหัส: ${cleanCode}`, 'info');
+            
+            // ✅ ข้อ 3: ตรวจสอบว่ามีรูปอยู่แล้วหรือไม่ (ตรวจเฉพาะคอลัมน์ picture)
+            const hasImage = await checkImageExists(cleanCode, type);
+            if (hasImage) {
+                addLog(`⏭️ ข้าม: ${fileName} (มีรูปภาพอยู่แล้วในคอลัมน์ picture)`, 'skip');
+                stats.skip++;
+                updateCounters();
+                return;
+            }
+            
+            try {
+                // ✅ ✅ ✅ ปรับขนาดรูปถ้าจำเป็น (ป้าย 2000 / สิ่งปลูกสร้าง 1500) ✅ ✅ ✅
+                const processedFile = await resizeImageIfNeeded(file, type);
+                const base64 = await fileToBase64(processedFile);
+                
+                // อัปโหลดผ่าน Apps Script
+                const result = await uploadImageToDrive(base64, fileName, cleanCode, type);
+                
+                if (result.success) {
+                    // ✅ อัปเดตข้อมูลในชีท (ใช้ฟังก์ชันที่แก้แล้ว)
+                    const updateSuccess = await updateSheetRecord(cleanCode, type, result.imageUrl, result.fileName);
+                    
+                    if (updateSuccess) {
+                        addLog(`✅ สำเร็จ: ${fileName} → ${result.fileName}`, 'success');
+                        stats.success++;
+                    } else {
+                        addLog(`❌ อัปเดตชีทล้มเหลว: ${fileName}`, 'error');
+                        stats.error++;
+                    }
+                } else {
+                    addLog(`❌ ข้ามการอัปโหลด: ${result.error || 'ไม่ทราบสาเหตุ'}`, 'error');
+                    stats.error++;
+                }
+                
+            } catch (err) {
+                addLog(`❌ ข้อผิดพลาด: ${err.message}`, 'error');
+                stats.error++;
+            }
+            
+            updateCounters();
+        }
+        
+        // ✅ ✅ ✅ แก้ฟังก์ชันตรวจสอบรูป (ตรวจเฉพาะคอลัมน์ picture) ✅ ✅ ✅
+        async function checkImageExists(code, type) {
+            try {
+                const response = await fetch(`${SCRIPT_URL}?action=getData`);
+                const data = await response.json();
+                
+                const records = type === 'building' ? data.buildings : data.signs;
+                const codeField = type === 'building' ? 'building_c' : 's_code';
+                
+                // ✅ หาเรคคอร์ดที่รหัสตรงกัน (เปรียบเทียบแบบ case-insensitive + trim)
+                const record = records.find(r => 
+                    String(r[codeField] || '').trim().toUpperCase() === String(code).trim().toUpperCase()
+                );
+                
+                // ✅ ถ้าไม่พบเรคคอร์ด → กลับ false (ไม่มีรูป → ควรอัปโหลด)
+                if (!record) {
+                    console.log(`❌ ไม่พบเรคคอร์ดสำหรับรหัส: "${code}"`);
+                    return false;
+                }
+                
+                // ✅ ✅ ✅ ตรวจเฉพาะค่าในคอลัมน์ 'picture' เท่านั้น ✅ ✅ ✅
+                const pictureVal = record.picture || '';
+                
+                // ✅ ✅ ✅ เงื่อนไข: มีรูปอยู่แล้วถ้า... ✅ ✅ ✅
+                // 1. มีค่า (ไม่ใช่ null/undefined)
+                // 2. ไม่ใช่ช่องว่างล้วน
+                // 3. ไม่ใช่ค่าขยะเช่น 'image.jpg'
+                const hasPicture = pictureVal && 
+                                  String(pictureVal).trim() !== '' && 
+                                  pictureVal.toLowerCase() !== 'image.jpg';
+                
+                if (hasPicture) {
+                    console.log(`✅ มีรูปภาพอยู่แล้วใน picture: "${pictureVal}" → ข้าม`);
+                } else {
+                    console.log(`❌ ยังไม่มีรูปภาพที่ถูกต้องใน picture (ค่า: "${pictureVal}") → จะอัปโหลด`);
+                }
+                
+                // ✅ คืนค่า: true = มีรูปแล้ว (ข้าม), false = ยังไม่มี (อัปโหลด)
+                return hasPicture;
+                
+            } catch (err) {
+                console.error('❌ checkImageExists error:', err);
+                return false; // บนผิดพลาด → ถือว่าไม่มีรูป → ลองอัปโหลด
+            }
+        }
+        
+        // ✅ แปลงไฟล์เป็น base64
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        // ✅ ✅ ✅ อัปโหลดรูปภาพผ่าน Apps Script (แก้ข้อความแจ้งเตือน) ✅ ✅ ✅
+        async function uploadImageToDrive(base64, originalFileName, code, type) {
+            const formData = new FormData();
+            
+            formData.append('action', 'batchImageUpload');
+            formData.append('type', type);
+            formData.append('code', code);
+            formData.append('image', base64);
+            formData.append('fileName', originalFileName);
+            
+            try {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 200 && result.data) {
+                    return {
+                        success: true,
+                        imageUrl: result.data.imageUrl,
+                        fileName: result.data.fileName
+                    };
+                }
+                
+                // ✅ ✅ ✅ แปลงข้อความผิดพลาดเป็นภาษาไทย ✅ ✅ ✅
+                let errorMessage = result.message || 'ไม่ทราบสาเหตุ';
+                
+                // ✅ ถ้าข้อความขึ้นต้นด้วย "Record with code" → แปลเป็นไทย
+                if (errorMessage.startsWith('Record with code')) {
+                    errorMessage = `ไม่พบรหัสในฐานข้อมูล: ${code}`;
+                }
+                // ✅ ถ้าข้อความเป็น "Image already exists" → แปลเป็นไทย
+                else if (errorMessage === 'Image already exists') {
+                    errorMessage = 'มีรูปภาพอยู่แล้วในคอลัมน์ picture';
+                }
+                
+                return { success: false, error: errorMessage };
+                
+            } catch (err) {
+                return { success: false, error: `การเชื่อมต่อล้มเหลว: ${err.message}` };
+            }
+        }
+        
+        // ✅ ✅ ✅ ฟังก์ชันปรับขนาดรูปก่อนอัปโหลด ✅ ✅ ✅
+        async function resizeImageIfNeeded(file, type) {
+            return new Promise((resolve) => {
+                const maxSize = type === 'sign' ? 2000 : 1500;  // ✅ ป้าย 2000, สิ่งปลูกสร้าง 1500
+                const img = new Image();
+                const reader = new FileReader();
+                
+                reader.onload = (e) => {
+                    img.onload = () => {
+                        // ✅ ถ้ารูปเล็กกว่าหรือเท่ากับขนาดที่กำหนด → ไม่ต้องปรับ
+                        if (img.width <= maxSize && img.height <= maxSize) {
+                            resolve(file);
+                            return;
+                        }
+                        
+                        // ✅ คำนวณขนาดใหม่โดยรักษาอัตราส่วน
+                        let newWidth = img.width;
+                        let newHeight = img.height;
+                        
+                        if (img.width > img.height) {
+                            newWidth = maxSize;
+                            newHeight = (img.height / img.width) * maxSize;
+                        } else {
+                            newHeight = maxSize;
+                            newWidth = (img.width / img.height) * maxSize;
+                        }
+                        
+                        // ✅ วาดรูปใหม่บน canvas
+                        const canvas = document.createElement('canvas');
+                        canvas.width = newWidth;
+                        canvas.height = newHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, newWidth, newHeight);
+                        
+                        // ✅ แปลงกลับเป็น blob
+                        canvas.toBlob((blob) => {
+                            // ✅ สร้างไฟล์ใหม่จาก blob
+                            const resizedFile = new File([blob], file.name, {
+                                type: file.type,
+                                lastModified: Date.now()
+                            });
+                            resolve(resizedFile);
+                        }, file.type, 0.9);  // ✅ คุณภาพ 90%
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // ✅ ✅ ✅ แก้: หาแถวด้วยรหัสโดยตรง (ไม่ต้องพึ่ง _row_num) ✅ ✅ ✅
+        async function updateSheetRecord(code, type, imageUrl, pictureName) {
+            try {
+                // ดึงข้อมูลทั้งหมดเพื่อหาแถวที่ตรงกัน
+                const response = await fetch(`${SCRIPT_URL}?action=getData`);
+                const data = await response.json();
+                
+                const records = type === 'building' ? data.buildings : data.signs;
+                const codeField = type === 'building' ? 'building_c' : 's_code';
+                
+                // ✅ ✅ ✅ หาแถวโดยจับคู่รหัสแบบเข้มงวด (trim + case-sensitive) ✅ ✅ ✅
+                const record = records.find(r => 
+                    String(r[codeField] || '').trim().toUpperCase() === String(code).trim().toUpperCase()
+                );
+                
+                if (!record) {
+                    addLog(`⚠️ ไม่พบข้อมูลสำหรับรหัส: ${code} (ในชีท ${type})`, 'error');
+                    // ✅ Debug: แสดงรหัสทั้งหมดที่มีในชีท
+                    const allCodes = records.map(r => r[codeField]).filter(c => c).slice(0, 10);
+                    addLog(`🔍 ตัวอย่างรหัสในชีท: ${allCodes.join(', ')}`, 'info');
+                    return false;
+                }
+                
+                // ✅ ใช้ _row_num ถ้ามี, ถ้าไม่มีให้ใช้ id
+                const rowKey = record._row_num || record.id;
+                if (!rowKey) {
+                    addLog(`⚠️ ไม่พบ _row_num หรือ id สำหรับรหัส: ${code}`, 'error');
+                    return false;
+                }
+                
+                // ส่งคำขออัปเดต
+                const updateResponse = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    body: new URLSearchParams({
+                        action: 'update',
+                        type: type,
+                        rowKey: rowKey,
+                        payload: JSON.stringify({
+                            image: imageUrl,
+                            picture: pictureName,
+                            check: record.check || 'ถ่ายรูปแล้ว'
+                        })
+                    })
+                });
+                
+                const result = await updateResponse.json();
+                
+                if (result.status === 200) {
+                    addLog(`✅ อัปเดตชีทสำเร็จ: ${pictureName}`, 'success');
+                    return true;
+                } else {
+                    addLog(`❌ อัปเดตชีทล้มเหลว: ${result.message}`, 'error');
+                    return false;
+                }
+                
+            } catch (err) {
+                addLog(`❌ อัปเดตชีทผิดพลาด: ${err.message}`, 'error');
+                return false;
+            }
+        }
+        
+        // ✅ อัปเดตแถบความคืบหน้า
+        function updateProgress(current, total) {
+            const percent = Math.round((current / total) * 100);
+            document.getElementById('progress-bar').style.width = `${percent}%`;
+            document.getElementById('progress-percent').textContent = `${percent}%`;
+        }
+        
+        // ✅ อัปเดตตัวนับ
+        function updateCounters() {
+            document.getElementById('count-success').textContent = stats.success;
+            document.getElementById('count-skip').textContent = stats.skip;
+            document.getElementById('count-error').textContent = stats.error;
+        }
+        
+        // ✅ เพิ่มข้อความในล็อก
+        function addLog(message, type = 'info') {
+            const container = document.getElementById('log-container');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString('th-TH')}] ${message}`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        // ✅ ล้างล็อก
+        function clearLog() {
+            document.getElementById('log-container').innerHTML = 
+                '<div class="log-entry log-info">ล้างบันทึกแล้ว...</div>';
+        }
+        
+        // ✅ ✅ ✅ ข้อ 3+4: Event Listener สำหรับปุ่มเลือกไฟล์ข้อมูล ✅ ✅ ✅
+        // ✅ ข้อ 3: สิ่งปลูกสร้าง
+        document.getElementById('building-data-file')?.addEventListener('change', function(e) {
+            if (e.target.files[0]) {
+                addLog(`📄 เลือกไฟล์ข้อมูลสิ่งปลูกสร้าง: ${e.target.files[0].name}`, 'info');
+                // ✅ TODO: เพิ่มโค้ดประมวลผลไฟล์ข้อมูลสิ่งปลูกสร้างที่นี่
+                // ผู้ใช้จะแจ้งโค้ดผูกอีกครั้ง
+            }
+        });
+
+        // ✅ ข้อ 4: ป้าย
+        document.getElementById('sign-data-file')?.addEventListener('change', function(e) {
+            if (e.target.files[0]) {
+                addLog(`📄 เลือกไฟล์ข้อมูลป้าย: ${e.target.files[0].name}`, 'info');
+                // ✅ TODO: เพิ่มโค้ดประมวลผลไฟล์ข้อมูลป้ายที่นี่
+                // ผู้ใช้จะแจ้งโค้ดผูกอีกครั้ง
+            }
+        });
+
+
+        // ✅ ✅ ✅ ฟังก์ชันกรองข้อมูลซ้ำภายในไฟล์ ✅ ✅ ✅
+        function deduplicateOwnerData(data) {
+            const seen = new Map(); // key: "fname|lname" (lowercase), value: owner object
+            
+            for (const item of data) {
+                // ✅ สร้าง key จาก fname+lname (case-insensitive)
+                const key = `${(item.fname||'').toLowerCase().trim()}|${(item.lname||'').toLowerCase().trim()}`;
+                
+                // ✅ ข้ามถ้าไม่มีชื่อ-นามสกุล
+                if (!item.fname || !item.lname) continue;
+                
+                if (!seen.has(key)) {
+                    // ✅ ยังไม่เคยเห็น → เพิ่มเลย
+                    seen.set(key, item);
+                } else {
+                    // ✅ มีซ้ำ → เลือกตามเงื่อนไข pop 13 หลัก
+                    const existing = seen.get(key);
+                    const existingPopValid = existing.pop && /^\d{13}$/.test(String(existing.pop).trim());
+                    const newPopValid = item.pop && /^\d{13}$/.test(String(item.pop).trim());
+                    
+                    // ✅ ถ้ารายการเดิมไม่มี pop 13 หลัก แต่รายการใหม่มี → แทนที่
+                    if (!existingPopValid && newPopValid) {
+                        seen.set(key, item);
+                        console.log(`🔄 แทนที่: ${key} (พบ pop 13 หลักในแถวใหม่)`);
+                    }
+                    // ✅ ถ้าทั้งคู่มีหรือทั้งคู่ไม่มี → เก็บรายการแรก (ไม่ทำอะไร)
+                    else {
+                        console.log(`⏭️ ข้ามแถวซ้ำ: ${key}`);
+                    }
+                }
+            }
+            
+            // ✅ แปลง Map กลับเป็น array
+            return Array.from(seen.values());
+        }
+
+        // ✅ ✅ ✅ ฟังก์ชันล้างไฟล์ที่เลือก ✅ ✅ ✅
+        function clearSelectedFile() {
+            const fileInput = document.getElementById('owner-import-file');
+            const fileNameDisplay = document.getElementById('owner-selected-filename');
+            const fileContainer = document.getElementById('owner-selected-file');
+            const btn = document.getElementById('btn-owner-import-start');
+            
+            if (fileInput) fileInput.value = '';
+            if (fileContainer) fileContainer.classList.add('hidden');
+            if (btn) btn.disabled = true;
+            
+            addLog('🗑️ ล้างไฟล์ที่เลือกแล้ว', 'info');
+        }
+
+        // ✅ ✅ ✅ ข้อ 3: สิ่งปลูกสร้าง - ล้างล็อก + รีเซ็ตเมื่อเลือกไฟล์ข้อมูล ✅ ✅ ✅
+        document.getElementById('building-data-file')?.addEventListener('change', function(e) {
+            if (e.target.files[0]) {
+                // ✅ ข้อ 1: ล้างล็อกอัตโนมัติ
+                clearLog();
+                
+                // ✅ ข้อ 2: รีเซ็ต progress bar ของเจ้าของ (ใช้ร่วมกัน)
+                document.getElementById('owner-import-bar').style.width = '0%';
+                document.getElementById('owner-import-percent').textContent = '0%';
+                document.getElementById('owner-import-success').textContent = '0';
+                document.getElementById('owner-import-skipped').textContent = '0';
+                document.getElementById('owner-import-failed').textContent = '0';
+                document.getElementById('owner-import-progress').classList.add('hidden');
+                
+                // ✅ แสดงชื่อไฟล์ในล็อก
+                addLog(`📄 เลือกไฟล์ข้อมูลสิ่งปลูกสร้าง: ${e.target.files[0].name}`, 'info');
+                
+                // ✅ TODO: เพิ่มโค้ดประมวลผลไฟล์ข้อมูลสิ่งปลูกสร้างที่นี่
+                // ผู้ใช้จะแจ้งโค้ดผูกอีกครั้ง
+            }
+        });
+
+        // ✅ ✅ ✅ ข้อ 4: ป้าย - ล้างล็อก + รีเซ็ตเมื่อเลือกไฟล์ข้อมูล ✅ ✅ ✅
+        document.getElementById('sign-data-file')?.addEventListener('change', function(e) {
+            if (e.target.files[0]) {
+                // ✅ ข้อ 1: ล้างล็อกอัตโนมัติ
+                clearLog();
+                
+                // ✅ ข้อ 2: รีเซ็ต progress bar ของเจ้าของ (ใช้ร่วมกัน)
+                document.getElementById('owner-import-bar').style.width = '0%';
+                document.getElementById('owner-import-percent').textContent = '0%';
+                document.getElementById('owner-import-success').textContent = '0';
+                document.getElementById('owner-import-skipped').textContent = '0';
+                document.getElementById('owner-import-failed').textContent = '0';
+                document.getElementById('owner-import-progress').classList.add('hidden');
+                
+                // ✅ แสดงชื่อไฟล์ในล็อก
+                addLog(`📄 เลือกไฟล์ข้อมูลป้าย: ${e.target.files[0].name}`, 'info');
+                
+                // ✅ TODO: เพิ่มโค้ดประมวลผลไฟล์ข้อมูลป้ายที่นี่
+                // ผู้ใช้จะแจ้งโค้ดผูกอีกครั้ง
+            }
+        });
+
+
+        // ============================================
+        // ✅ ระบบคิวนำเข้าแบบออฟไลน์ (รอได้ 60 นาที)
+        // ============================================
+        let importQueue = [];  // ← ต้องมีแค่บรรทัดเดียว!
+        const IMPORT_QUEUE_TIMEOUT = 60 * 60 * 1000;
+
+        function loadImportQueue() {
+            try {
+                const saved = localStorage.getItem('importQueue');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    importQueue = parsed.filter(item => 
+                        Date.now() - item.timestamp < IMPORT_QUEUE_TIMEOUT
+                    );
+                    console.log(`📥 โหลดคิวนำเข้า: ${importQueue.length} รายการ`);
+                }
+            } catch (err) {
+                console.error('❌ โหลดคิวนำเข้าล้มเหลว:', err);
+                importQueue = [];
+            }
+        }
+
+        function saveImportQueue() {
+            try {
+                localStorage.setItem('importQueue', JSON.stringify(importQueue));
+            } catch (err) {
+                console.error('❌ บันทึกคิวนำเข้าล้มเหลว:', err);
+            }
+        }
+
+        function addToImportQueue(type, data, imageBase64 = null, fileName = null) {
+            const queueItem = {
+                id: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                timestamp: Date.now(),
+                type: type,
+                data: data,
+                imageBase64: imageBase64,
+                fileName: fileName,
+                retryCount: 0,
+                status: 'pending'
+            };
+            importQueue.push(queueItem);
+            saveImportQueue();
+            console.log(`📥 เพิ่มเข้าคิว: ${type} - ${queueItem.id}`);
+            if (navigator.onLine) setTimeout(processImportQueue, 500);
+            return queueItem.id;
+        }
+
+        async function processImportQueue() {
+            if (!navigator.onLine || importQueue.length === 0) {
+                console.log('⏳ รอออนไลน์หรือไม่มีคิว');
+                return;
+            }
+            console.log(`🔄 เริ่มประมวลผลคิวนำเข้า: ${importQueue.length} รายการ`);
+            
+            const now = Date.now();
+            importQueue = importQueue.filter(item => 
+                now - item.timestamp < IMPORT_QUEUE_TIMEOUT
+            );
+            
+            for (let i = 0; i < importQueue.length; i++) {
+                const item = importQueue[i];
+                if (item.status === 'success') continue;
+                
+                try {
+                    console.log(`📤 ส่งรายการ ${i+1}/${importQueue.length}: ${item.type}`);
+                    let result;
+                    
+                    if (item.type === 'owner') {
+                        const formData = new FormData();
+                        formData.append('action', 'quickAdd');
+                        formData.append('type', 'owner');
+                        formData.append('payload', JSON.stringify(item.data));
+                        const res = await fetch(SCRIPT_URL, { method: 'POST', body: formData });
+                        result = await res.json();
+                    } else if (item.imageBase64) {
+                        const formData = new FormData();
+                        formData.append('action', 'quickAdd');
+                        formData.append('type', item.type);
+                        formData.append('payload', JSON.stringify(item.data));
+                        formData.append('image', item.imageBase64);
+                        if (item.fileName) formData.append('fileName', item.fileName);
+                        const res = await fetch(SCRIPT_URL, { method: 'POST', body: formData });
+                        result = await res.json();
+                    } else {
+                        const formData = new FormData();
+                        formData.append('action', 'quickAdd');
+                        formData.append('type', item.type);
+                        formData.append('payload', JSON.stringify(item.data));
+                        const res = await fetch(SCRIPT_URL, { method: 'POST', body: formData });
+                        result = await res.json();
+                    }
+                    
+                    if (result.status === 200 || result.data?.success) {
+                        item.status = 'success';
+                        console.log(`✅ สำเร็จ: ${item.id}`);
+                    } else {
+                        throw new Error(result.message || 'Unknown error');
+                    }
+                } catch (err) {
+                    item.retryCount++;
+                    item.status = 'failed';
+                    console.warn(`❌ ล้มเหลว (${item.retryCount}/3): ${item.id} - ${err.message}`);
+                    if (item.retryCount >= 3) {
+                        console.error(`🗑️ ทิ้งรายการ: ${item.id}`);
+                    }
+                }
+                saveImportQueue();
+                if (i % 5 === 0) await new Promise(resolve => setTimeout(resolve, 200));
+            }
+            
+            importQueue = importQueue.filter(item => 
+                item.status !== 'success' && item.retryCount < 3
+            );
+            saveImportQueue();
+            updateImportQueueBadge();
+            console.log(`✅ ประมวลผลคิวเสร็จสิ้น`);
+        }
+
+        function updateImportQueueBadge() {
+            const badge = document.getElementById('import-queue-badge');
+            if (badge) {
+                const pending = importQueue.filter(i => i.status === 'pending').length;
+                if (pending > 0) {
+                    badge.textContent = pending;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+            }
+        }
+
+        function showImportQueueModal() {
+            const modal = document.getElementById('import-queue-modal');
+            const list = document.getElementById('import-queue-list');
+            if (importQueue.length === 0) {
+                list.innerHTML = '<p class="text-gray-500 text-center">ไม่มีคิวรอส่ง</p>';
+            } else {
+                list.innerHTML = importQueue.map(item => `
+                    <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                        <div>
+                            <div class="font-medium">${item.type}</div>
+                            <div class="text-gray-500">${new Date(item.timestamp).toLocaleTimeString('th-TH')}</div>
+                        </div>
+                        <span class="px-2 py-0.5 rounded text-[10px] ${
+                            item.status === 'success' ? 'bg-green-100 text-green-700' :
+                            item.retryCount >= 3 ? 'bg-red-100 text-red-700' :
+                            'bg-yellow-100 text-yellow-700'
+                        }">
+                            ${item.status === 'success' ? 'สำเร็จ' : 
+                              item.retryCount >= 3 ? 'ล้มเหลว' : 'รอส่ง'}
+                        </span>
+                    </div>
+                `).join('');
+            }
+            modal.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function hideImportQueueModal() {
+            document.getElementById('import-queue-modal').classList.add('hidden');
+        }
+
+        function clearImportQueue() {
+            if (confirm('ล้างคิวนำเข้าทั้งหมด?')) {
+                importQueue = [];
+                saveImportQueue();
+                updateImportQueueBadge();
+                if (typeof showNotificationLeft === 'function') {
+                    showNotificationLeft('✅ ล้างคิวแล้ว', 'success');
+                } else {
+                    alert('✅ ล้างคิวแล้ว');
+                }
+            }
+        }
+
+        window.addEventListener('online', () => {
+            console.log('🌐 ออนไลน์แล้ว → เริ่มประมวลผลคิวนำเข้า');
+            processImportQueue();
+            updateImportQueueBadge();
+        });
+
+        window.addEventListener('offline', () => {
+            console.log('🔌 ออฟไลน์ → บันทึกคิวนำเข้ารอประมวลผล');
+            saveImportQueue();
+            updateImportQueueBadge();
+        });
+
+
+        // ✅ ฟังก์ชันล้างคิวที่หมดอายุ
+        function cleanupExpiredImportQueue() {
+            const now = Date.now();
+            const before = importQueue.length;
+            
+            importQueue = importQueue.filter(item => 
+                now - item.timestamp < IMPORT_QUEUE_TIMEOUT
+            );
+            
+            if (importQueue.length !== before) {
+                console.log(`🧹 ล้างคิวหมดอายุ: ${before} → ${importQueue.length} รายการ`);
+                saveImportQueue();
+            }
+        }
+            
+        // ============================================
+        // ✅ ระบบคิวนำเข้าแบบออฟไลน์ (รอได้ 60 นาที)
+        // ============================================
+
+        function showImportQueueModal() {
+            const modal = document.getElementById('import-queue-modal');
+            const list = document.getElementById('import-queue-list');
+            if (importQueue.length === 0) {
+                list.innerHTML = '<p class="text-gray-500 text-center">ไม่มีคิวรอส่ง</p>';
+            } else {
+                list.innerHTML = importQueue.map(item => `
+                    <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                        <div><div class="font-medium">${item.type}</div>
+                        <div class="text-gray-500">${new Date(item.timestamp).toLocaleTimeString('th-TH')}</div></div>
+                        <span class="px-2 py-0.5 rounded text-[10px] ${
+                            item.status === 'success' ? 'bg-green-100 text-green-700' :
+                            item.retryCount >= 3 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}">
+                            ${item.status === 'success' ? 'สำเร็จ' : item.retryCount >= 3 ? 'ล้มเหลว' : 'รอส่ง'}
+                        </span>
+                    </div>`).join('');
+            }
+            modal.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        window.addEventListener('online', () => { processImportQueue(); });
+        window.addEventListener('offline', () => { saveImportQueue(); });
+
+        // ✅ ✅ ✅ DOMContentLoaded จุดเดียว (รวมทุกอย่าง) ✅ ✅ ✅
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            // 1. สร้างไอคอนทั้งหมด (เช็คก่อนเรียก)
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+            
+            // 2. โหลดระบบคิว
+            loadImportQueue();
+            updateImportQueueBadge();
+            
+            // 3. แสดงข้อความเริ่มต้น
+            addLog('🚀 หน้าจอพร้อมใช้งาน', 'info');
+            
+            // 4. ผูกเหตุการณ์เลือกไฟล์เจ้าของ
+            document.getElementById('owner-import-file')?.addEventListener('change', function(e) {
+                const btn = document.getElementById('btn-owner-import-start');
+                const fileNameDisplay = document.getElementById('owner-selected-filename');
+                const fileContainer = document.getElementById('owner-selected-file');
+                
+                if (e.target.files[0]) {
+                    if (btn) btn.disabled = false;
+                    if (fileNameDisplay && fileContainer) {
+                        fileNameDisplay.textContent = e.target.files[0].name;
+                        fileContainer.classList.remove('hidden');
+                    }
+                    clearLog();
+                    document.getElementById('owner-import-bar').style.width = '0%';
+                    document.getElementById('owner-import-percent').textContent = '0%';
+                    document.getElementById('owner-import-success').textContent = '0';
+                    document.getElementById('owner-import-skipped').textContent = '0';
+                    document.getElementById('owner-import-failed').textContent = '0';
+                    document.getElementById('owner-import-progress').classList.add('hidden');
+                    addLog(`📄 เลือกไฟล์: ${e.target.files[0].name}`, 'info');
+                } else {
+                    if (btn) btn.disabled = true;
+                    if (fileContainer) fileContainer.classList.add('hidden');
+                }
+            });
+            
+            // 5. ตั้งเวลาเช็คคิวทุก 30 วินาที
+            setInterval(() => {
+                if (navigator.onLine) {
+                    cleanupExpiredImportQueue();
+                    processImportQueue();
+                }
+                updateImportQueueBadge();
+            }, 30000);
+            
+        });
+
+        // ============================================
+        // ✅ ระบบแมปข้อมูลนำเข้าสิ่งปลูกสร้าง
+        // ============================================
+        
+        // ✅ แมปค่าจากไฟล์ → ตรงกับตัวเลือกในฟอร์ม
+        const BUILDING_FIELD_MAPPINGS = {
+            // ประเภทสิ่งปลูกสร้าง (ค้นหาด้วยคำสำคัญ)
+            'b_type': {
+                'ไม้ชั้นเดียว': '101-บ้านพักอาศัยไม้ชั้นเดียว',
+                'ไม้ 1 ชั้น': '101-บ้านพักอาศัยไม้ชั้นเดียว',
+                'ไม้ชั้นเดียวใต้ถุน': '102-บ้านพักอาศัยไม้ชั้นเดียวใต้ถุนสูง',
+                'ตึกชั้นเดียว': '103-บ้านพักอาศัยตึกชั้นเดียว',
+                'ตึก 1 ชั้น': '103-บ้านพักอาศัยตึกชั้นเดียว',
+                'ไม้สองชั้น': '104-บ้านพักอาศัยไม้สองชั้น',
+                'ไม้ 2 ชั้น': '104-บ้านพักอาศัยไม้สองชั้น',
+                'ตึกสองชั้น': '105-บ้านพักอาศัยตึกสองชั้น',
+                'ตึก 2 ชั้น': '105-บ้านพักอาศัยตึกสองชั้น',
+                'ครึ่งตึกครึ่งไม้': '106-บ้านพักอาศัยครึ่งตึกครึ่งไม้สองชั้น',
+                'ตึกสามชั้น': '107-บ้านพักอาศัยตึกสามชั้น',
+                'ตึก 3 ชั้น': '107-บ้านพักอาศัยตึกสามชั้น',
+                'ทาวน์เฮาส์': '201-บ้านแถว ทาวน์เฮาส์) ชั้นเดียว',
+                'ห้องแถว': '301-ห้องแถวไม้ชั้นเดียว',
+                'ตึกแถว': '401-ตึกแถวชั้นเดียว',
+                'คลังสินค้า': '501-คลังสินค้า พื้นที่ไม่เกิน 300 ตารางเมตร',
+                'โรงแรม': '506/1-โรงแรม ความสูงไม่เกิน 5 ชั้น',
+                'สำนักงาน': '509/1-สำนักงาน ความสูงไม่เกิน 5 ชั้น',
+                'ห้าง': '511/1-ห้างสรรพสินค้า',
+                'โรงงาน': '513-โรงงาน',
+                'ตลาด': '514-ตลาด พื้นที่ไม่เกิน 1,000 ตารางเมตร',
+                'รั้วคอนกรีต': '601-รั้วคอนกรีต',
+                'รั้วลวด': '602-รั้วลวดหนาม',
+                'รั้วสังกะสี': '603-รั้วสังกะสี',
+                'สระว่ายน้ำ': '608-สระว่ายน้ำ',
+                'ถนนคอนกรีต': '610-ถนนคอนกรีต',
+                'ถนนลาดยาง': '612-ถนนลาดยาง',
+                'ป้าย': '613-ป้ายโฆษณา'
+            },
+            
+            // วัสดุ
+            'b_mat': {
+                // ✅ รองรับรูปแบบ `1 - ไม้`, `2`, `3`
+                '1 - ไม้': 'ไม้',
+                '1': 'ไม้',  // ✅ ถ้าเป็นตัวเลข 1 → ไม้
+                '2': 'ตึก',   // ✅ ถ้าเป็นตัวเลข 2 → ตึก
+                '3': 'ตึก/ไม้', // ✅ ถ้าเป็นตัวเลข 3 → ตึก/ไม้
+                'ไม้': 'ไม้',
+                'ตึก': 'ตึก',
+                'ตึก/ไม้': 'ตึก/ไม้',
+                'คอนกรีต': 'ตึก',
+                'ครึ่งตึกครึ่งไม้': 'ตึก/ไม้'
+            },
+            
+            // ใช้ประโยชน์
+            'b_use': {
+                'เกษตร': '1-เกษตรกรรม',
+                'ที่อยู่อาศัย': '2-(1)ที่อยู่อาศัย หลังหลัก',
+                'บ้าน': '2-(1)ที่อยู่อาศัย หลังหลัก',
+                'เช่า': '2-(3)ที่อยู่อาศัย หลังอื่นๆ เช่น ให้เช่ารายเดือน',
+                'ประกอบการ': '3-อื่นๆ ประกอบการ',
+                'ค้าขาย': '3-อื่นๆ ประกอบการ',
+                'ว่าง': '4-ทิ้งไว้ว่างเปล่า/รกร้าง',
+                'รกร้าง': '4-ทิ้งไว้ว่างเปล่า/รกร้าง'
+            },
+            
+            // การเช่า
+            'per_use': {
+                'เอง': 'ใช้ประโยชน์เอง',
+                'เจ้าของ': 'ใช้ประโยชน์เอง',
+                'ให้เช่า': 'ให้เช่า',
+                'เช่า': 'ให้เช่า',
+                'คนอื่น': 'ผู้อื่นใช้',
+                'ผู้อื่น': 'ผู้อื่นใช้'
+            },
+            
+            // ใช้ทั้งหลัง
+            'full_area': {
+                'เต็ม': 'เต็มพื้นที่',
+                'ทั้งหมด': 'เต็มพื้นที่',
+                'บาง': 'บางส่วน',
+                'ส่วน': 'บางส่วน'
+            },
+            
+            // รายละเอียด
+            'b_note': {
+                'ยุ้ง': 'ยุ้งข้าว',
+                'คอกวัว': 'คอกวัว',
+                'เล้า': 'เล้าไก่',
+                'คอกหมู': 'คอกหมู',
+                'โรงจอด': 'โรงจอดรถ',
+                'ห้องน้ำ': 'ห้องน้ำ',
+                'ร้านค้า': 'ร้านค้าของชำ',
+                'ขายอาหาร': 'ขายอาหาร',
+                'มินิ': 'มินิมาร์ท',
+                'กระท่อม': 'กระท่อมนา',
+                'เพิง': 'เพิงพัก',
+                'เก็บของ': 'โรงเก็บของ',
+                'ฟาง': 'เก็บฟาง',
+                'ครัว': 'โรงครัว',
+                'ศาลา': 'ศาลาพักผ่อน',
+                'ตู้เติม': 'ตู้เติมเงิน',
+                'ตู้น้ำมัน': 'ตู้น้ำมันหยอดเหรียญ',
+                'ตู้น้ำ': 'ตู้น้ำดื่มหยอดเหรียญ',
+                'ห้องเช่า': 'ห้องเช่ารายเดือน',
+                'รีสอร์ท': 'รีสอร์ท',
+                'รื้อ': 'รื้อ'
+            },
+            
+            // ประเภทที่ดิน
+            'land_type': {
+                'โฉนด': 'โฉนด',
+                'นส2': 'น.ส.2',
+                'น.ส.2': 'น.ส.2',
+                'นส3': 'น.ส.3',
+                'น.ส.3': 'น.ส.3',
+                'นส3ก': 'น.ส.3ก',
+                'น.ส.3ก': 'น.ส.3ก',
+                'นสล': 'น.ส.ล.',
+                'น.ส.ล.': 'น.ส.ล.',
+                'ราชพัสดุ': 'ที่ราชพัสดุ',
+                'สธ': 'ส.ธ.1',
+                'ส.ธ.1': 'ส.ธ.1',
+                'สปก': 'ส.ป.ก.4-01',
+                'ส.ป.ก.': 'ส.ป.ก.4-01',
+                'ทุ่ง': 'ทุ่งเลี้ยงสัตว์',
+                'อื่นๆ': 'อื่นๆ'
+            },
+            
+            // สถานะตรวจสอบ
+            'check': {
+                'ยังไม่': 'ยังไม่สำรวจ',
+                'ถ่ายรูป': 'ถ่ายรูปแล้ว',
+                'รูป': 'ถ่ายรูปแล้ว',
+                'ตรวจสอบ': 'ตรวจสอบแล้ว',
+                'ตรวจ': 'ตรวจสอบแล้ว'
+            }
+        };
+        
+        // ✅ ฟังก์ชันแมปค่าเดียว
+        function mapFieldValue(fieldId, rawValue) {
+            if (!rawValue || rawValue.toString().trim() === '') return '';
+            
+            const raw = rawValue.toString().trim();
+            const mappings = BUILDING_FIELD_MAPPINGS[fieldId];
+            
+            if (!mappings) return raw; // ไม่มีแมป → คืนค่าเดิม
+            
+            // ✅ ค้นหาแบบตรงกันเป๊ะ
+            if (mappings[raw]) return mappings[raw];
+            
+            // ✅ ค้นหาแบบมีส่วนของคำ (กรณีอัปโหลดมีคำยาวกว่า)
+            const rawLower = raw.toLowerCase();
+            for (const [key, value] of Object.entries(mappings)) {
+                if (rawLower.includes(key.toLowerCase())) {
+                    return value;
+                }
+            }
+            
+            // ✅ ไม่เจอ → คืนค่าเดิม (อาจเป็น custom value)
+            return raw;
+        }
+        
+        // ✅ ฟังก์ชันแปลงวันที่เป็นรูปแบบไทย พ.ศ. (ใช้ฟังก์ชันเดิมที่มีอยู่)
+        function formatImportDateTime(dateValue) {
+            try {
+                const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+                if (isNaN(date.getTime())) {
+                    // ✅ ถ้าแปลงไม่ได้ → ใช้เวลาปัจจุบัน
+                    return formatThaiDateTimeBE(new Date());
+                }
+                return formatThaiDateTimeBE(date);
+            } catch {
+                return formatThaiDateTimeBE(new Date());
+            }
+        }
+
+        
+        // ============================================
+        // ✅ ฟังก์ชันประมวลผลไฟล์นำเข้าสิ่งปลูกสร้าง (แก้รายงานข้อผิดพลาด)
+        // ============================================
+        
+        async function processBuildingImport(file) {
+            const stats = { success: 0, skip: 0, error: 0, total: 0 };
+            const errorDetails = []; // ✅ ✅ ✅ เก็บรายละเอียดข้อผิดพลาดทั้งหมด ✅ ✅ ✅
+            const progressDiv = document.getElementById('building-data-progress');
+            const progressBar = document.getElementById('building-data-bar');
+            const progressPercent = document.getElementById('building-data-percent');
+            const progressTitle = document.getElementById('building-data-title');
+            
+            progressDiv.classList.remove('hidden');
+            progressTitle.textContent = 'กำลังอ่านไฟล์...';
+            
+            try {
+                // ✅ ในส่วนอ่านไฟล์:
+                const data = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const workbook = XLSX.read(e.target.result, { 
+                                type: 'array',
+                                cellDates: false,
+                                cellNF: false,
+                                cellText: true,
+                                raw: true  // ✅ อ่านค่าดิบ ไม่แปลงอัตโนมัติ
+                            });
+                            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const rows = XLSX.utils.sheet_to_json(firstSheet, { 
+                                header: 1,
+                                raw: true,  // ✅ อ่านค่าดิบ
+                                defval: ''
+                            });
+                            resolve(rows);
+                        } catch (err) { reject(err); }
+                    };
+                    reader.onerror = () => reject(new Error('อ่านไฟล์ล้มเหลว'));
+                    reader.readAsArrayBuffer(file);
+                });
+                
+                if (data.length < 2) throw new Error('ไฟล์ไม่มีข้อมูล');
+                
+                const headers = data[0].map(h => String(h).trim().toLowerCase());
+                const rows = data.slice(1).filter(row => row.some(cell => cell));
+                
+                stats.total = rows.length;
+                progressTitle.textContent = `กำลังประมวลผล ${stats.total} รายการ...`;
+                
+                // ✅ 2. ดึงรหัสที่มีอยู่แล้ว (เพื่อเช็คซ้ำ)
+                const existingCodes = await getExistingBuildingCodes();
+                
+                // ✅ 3. ประมวลผลทีละแถว
+                for (let i = 0; i < rows.length; i++) {
+                    const row = rows[i];
+                    const rowData = {};
+                    
+                    // ✅ ✅ ✅ แก้: บังคับ parcel_cod เป็นข้อความ ป้องกันวิทยาศาสตร์ ✅ ✅ ✅
+                    headers.forEach((header, idx) => {
+                        const value = row[idx];
+                        if (value === undefined || value === null || value.toString().trim() === '') return;
+                        
+                        const fieldMap = {
+                            'building_c': 'building_c', 'รหัสสิ่งปลูกสร้าง': 'building_c',
+                            'parcel_cod': 'parcel_cod', 'รหัสแปลง': 'parcel_cod',
+                            'b_type': 'b_type', 'ประเภท': 'b_type', 'ประเภทสิ่งปลูกสร้าง': 'b_type',
+                            'b_mat': 'b_mat', 'วัสดุ': 'b_mat',
+                            'b_year': 'b_year', 'อายุ': 'b_year',
+                            'hs_no': 'hs_no', 'บ้านเลขที่': 'hs_no',
+                            'hs_moo': 'hs_moo', 'หมู่': 'hs_moo',
+                            'no_floor': 'no_floor', 'จำนวนชั้น': 'no_floor',
+                            'b_area': 'b_area', 'พื้นที่': 'b_area', 'พท': 'b_area',
+                            'b_note': 'b_note', 'รายละเอียด': 'b_note',
+                            'b_use': 'b_use', 'ใช้ประโยชน์': 'b_use',
+                            'per_use': 'per_use', 'การเช่า': 'per_use',
+                            'full_area': 'full_area', 'ใช้ทั้งหลัง': 'full_area',
+                            'buse_floor': 'buse_floor', 'ชั้นที่ใช้': 'buse_floor',
+                            'buse_area': 'buse_area', 'ment_use': 'ment_use',
+                            'b_use2': 'b_use2', 'per_use2': 'per_use2',
+                            'buse_floor2': 'buse_floor2', 'buse_area2': 'buse_area2',
+                            'ment_use2': 'ment_use2', 'full_area2': 'full_area2',
+                            'fname': 'fname', 'lname': 'lname', 'title': 'title',
+                            'full_name': 'full_name', 'เจ้าของ': 'full_name',
+                            'land_type': 'land_type', 'ประเภทที่ดิน': 'land_type',
+                            'land_use': 'land_use', 'ใช้ประโยชน์ที่ดิน': 'land_use',
+                            'check': 'check', 'สถานะ': 'check',
+                            'lat_long': 'lat_long', 'พิกัด': 'lat_long',
+                            'image': 'image', 'picture': 'picture',
+                            'date_added': 'date_added', 'update': 'update',
+                            'id': 'id'
+                        };
+                        
+                        const fieldId = fieldMap[header];
+                        if (fieldId) {
+                            let rawValue = String(value).trim();
+                            
+                            // ✅ ✅ ✅ แก้เฉพาะ parcel_cod: ถ้าเป็นรหัสพิเศษ → ใช้ค่าเดิม ✅ ✅ ✅
+                            if (fieldId === 'parcel_cod') {
+                                let rawValue = String(value).trim();
+                                
+                                // ✅ เช็คก่อนว่าเป็นรหัสพิเศษแบบ "06E001", "14E074" ฯลฯ หรือไม่
+                                // ✅ รูปแบบ: ตัวอักษร+เลข + 'E' + เลข 3 หลัก (เช่น 06E001, 14E074)
+                                if (/^[A-Za-z0-9]+E\d{3}$/.test(rawValue.toUpperCase())) {
+                                    // ✅ เป็นรหัสพิเศษ → ใช้ค่าเดิม ไม่ต้องแปลง!
+                                    console.log(`✅ รหัสพิเศษ: ${rawValue} → ใช้ค่าเดิม`);
+                                }
+                                // ✅ ถ้าเป็นวิทยาศาสตร์จริง (เช่น "6e+71") → แปลงกลับ
+                                else if (/^[0-9.]+[eE][+-]?[0-9]+$/.test(rawValue)) {
+                                    const num = parseFloat(rawValue);
+                                    rawValue = String(Math.floor(num)).padStart(6, '0');
+                                    console.log(`🔧 แก้วิทยาศาสตร์: ${value} → ${rawValue}`);
+                                }
+                                // ✅ ถ้าเป็นตัวเลขล้วน → เติม 0 นำหน้า
+                                else if (/^\d+$/.test(rawValue)) {
+                                    rawValue = rawValue.padStart(6, '0');
+                                }
+                                
+                                rowData[fieldId] = rawValue;
+                            }
+                            
+                            rowData[fieldId] = rawValue;
+                        }
+                    });
+                    
+                    // ✅ ✅ ✅ สร้าง full_name อัตโนมัติถ้าไม่มีในไฟล์ ✅ ✅ ✅
+                    // (รองรับกรณีมีค่าแค่บางคอลัมน์: title หรือ fname หรือ lname)
+                    if (!rowData.full_name || rowData.full_name.trim() === '') {
+                        // ✅ รวบรวมค่าที่มีอยู่จาก 3 คอลัมน์ (ไม่ต้องมีครบ)
+                        const ownerParts = [rowData.title, rowData.fname, rowData.lname]
+                            .filter(v => v && v.toString().trim() !== '');
+                        
+                        // ✅ ✅ ✅ แก้: ถ้ามีข้อมูลเจ้าของอย่างน้อย 1 คอลัมน์ → สร้าง full_name ✅ ✅ ✅
+                        if (ownerParts.length >= 1) {
+                            rowData.full_name = ownerParts.join(' | ');  // ✅ คั่นด้วย " | "
+                            console.log(`✅ สร้าง full_name: ${rowData.full_name}`);
+                        }
+                    }
+                    
+                    // ✅ ถ้ามี full_name แล้ว → แยกกลับเป็น title/fname/lname (กรณีไฟล์มี full_name แต่ไม่มี 3 คอลัมน์)
+                    if (rowData.full_name && rowData.full_name.includes('|') && 
+                        (!rowData.fname || !rowData.lname)) {
+                        const parts = rowData.full_name.split('|').map(p => p.trim()).filter(p => p);
+                        if (parts.length >= 1) {
+                            // ✅ แบ่งตามตำแหน่ง: 0=title, 1=fname, 2+=lname
+                            rowData.title = rowData.title || parts[0];
+                            rowData.fname = rowData.fname || parts[1];
+                            rowData.lname = rowData.lname || (parts.length > 2 ? parts.slice(2).join(' ') : '');
+                        }
+                    }
+                    
+                    // ✅ ถ้าไม่มี parcel_cod → ดึง 6 ตัวแรกของ building_c
+                    if (!rowData.parcel_cod || rowData.parcel_cod.trim() === '') {
+                        if (rowData.building_c && rowData.building_c.length >= 6) {
+                            rowData.parcel_cod = rowData.building_c.substring(0, 6);
+                        }
+                    }
+                    
+                    // ✅ ตรวจสอบ building_c
+                    if (!rowData.building_c || rowData.building_c.trim() === '') {
+                        stats.error++;
+                        errorDetails.push({ row: i+1, code: 'NO_BUILDING_C', message: 'ไม่มี building_c' });
+                        updateBuildingDataProgress(i + 1, stats);
+                        continue;
+                    }
+                    
+                    // ✅ ในส่วนเช็คซ้ำ:
+                    if (existingCodes.has(rowData.building_c.trim().toUpperCase())) {
+                        stats.skip++;
+                        updateBuildingDataProgress(i + 1, stats);
+                        continue;
+                    }
+                    
+                    // ✅ สร้างค่าอัตโนมัติ
+                    const now = formatThaiDateTimeBE(new Date());
+                    rowData.date_added = now;
+                    rowData.update = now;
+                    rowData.id = `building_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+                    
+                    // ✅ ส่งข้อมูลไปบันทึก
+                    try {
+                        const formData = new FormData();
+                        formData.append('action', 'quickAdd');
+                        formData.append('type', 'building');
+                        formData.append('payload', JSON.stringify(rowData));
+                        
+                        const res = await fetch(SCRIPT_URL.trim(), {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const result = await res.json();
+                        
+                        // ✅ หาบรรทัดนี้ในลูป for (ประมาณแถวที่ 1650-1680 ของไฟล์)
+                        if (result.status === 200) {
+                            stats.success++;                           
+                            
+                            if (i < 3) addLog(`✅ แถว ${i+1}: บันทึกสำเร็จ ${rowData.building_c}`, 'success');
+                        } else {
+                            stats.error++;
+                            // ✅ ✅ ✅ เก็บรายละเอียดข้อผิดพลาดทั้งหมด ✅ ✅ ✅
+                            errorDetails.push({ 
+                                row: i+1, 
+                                code: rowData.building_c,
+                                message: result.message || 'Unknown error',
+                                status: result.status
+                            });
+                        }
+                    } catch (err) {
+                        stats.error++;
+                        // ✅ ✅ ✅ เก็บรายละเอียดข้อผิดพลาดทั้งหมด ✅ ✅ ✅
+                        errorDetails.push({ 
+                            row: i+1, 
+                            code: rowData.building_c,
+                            message: err.message,
+                            type: 'network_error'
+                        });
+                    }
+                    
+                    updateBuildingDataProgress(i + 1, stats);
+                    if (i % 10 === 0) await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                // ✅ ✅ ✅ สรุปผล + แสดงรายงานข้อผิดพลาดแบบละเอียด ✅ ✅ ✅
+                progressTitle.textContent = `✅ เสร็จสิ้น!`;
+                const msg = `นำเข้าสำเร็จ: ${stats.success}/${stats.total} รายการ`;
+                
+                // ✅ แสดงสรุปใน progress bar
+                if (stats.error > 0) {
+                    addLog(`⚠️ ${msg} (ข้าม: ${stats.skip}, ผิดพลาด: ${stats.error})`, 'warning');
+                } else {
+                    addLog(`✅ ${msg} (ข้าม: ${stats.skip})`, 'success');
+                }
+                
+                // ✅ ✅ ✅ แสดงรายงานข้อผิดพลาดทั้งหมดในล็อก ✅ ✅ ✅
+                if (errorDetails.length > 0) {
+                    addLog(`\n📋 รายงานข้อผิดพลาด (${errorDetails.length} รายการ):`, 'error');
+                    
+                    // ✅ จัดกลุ่มข้อผิดพลาดตามประเภท
+                    const errorGroups = {};
+                    errorDetails.forEach(err => {
+                        const key = err.message.split(':')[0] || err.type || 'unknown';
+                        if (!errorGroups[key]) errorGroups[key] = [];
+                        errorGroups[key].push(err);
+                    });
+                    
+                    // ✅ แสดงแต่ละกลุ่ม
+                    Object.entries(errorGroups).forEach(([reason, errors]) => {
+                        addLog(`  • ${reason}: ${errors.length} รายการ`, 'error');
+                        // ✅ แสดงตัวอย่าง 5 รายการแรกของแต่ละกลุ่ม
+                        errors.slice(0, 5).forEach(err => {
+                            addLog(`    - แถว ${err.row}: ${err.code} → ${err.message}`, 'error');
+                        });
+                        if (errors.length > 5) {
+                            addLog(`    ... และอีก ${errors.length - 5} รายการ`, 'error');
+                        }
+                    });
+                    
+                    // ✅ ปุ่มดาวน์โหลดรายงานข้อผิดพลาด
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'mt-2 px-3 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200';
+                    downloadBtn.innerHTML = '📥 ดาวน์โหลดรายงานข้อผิดพลาด (CSV)';
+                    downloadBtn.onclick = () => downloadErrorReport(errorDetails);
+                    document.getElementById('log-container').appendChild(downloadBtn);
+                }                
+               
+                // ✅ 2. รีเซ็ตตัวแปรบล็อก + รีเฟรชแผนที่ (รอ 5 วิ)
+                setTimeout(() => {
+                    console.log('🔄 เริ่มรีเฟรชแผนที่หลังนำเข้า...');
+                    
+                    // ✅ รีเซ็ต markersBeingMoved (สำคัญมาก!)
+                    if (window.markersBeingMoved) {
+                        window.markersBeingMoved.clear();
+                        console.log('🔄 รีเซ็ต markersBeingMoved แล้ว');
+                    }
+                    
+                    // ✅ ✅ ✅ แก้บรรทัดนี้: เปลี่ยน refreshMarkers() เป็น refreshData(true) ✅ ✅ ✅
+                    if (typeof refreshData === 'function') {  // ← แก้จาก refreshMarkers เป็น refreshData
+                        refreshData(true);  // ← แก้จาก refreshMarkers() เป็น refreshData(true)
+                        console.log('✅ รีเฟรชเสร็จสิ้น');
+                    }
+                    
+                    // ✅ แจ้งผู้ใช้
+                    showNotificationLeft('✅ นำเข้าเสร็จสิ้น! กรุณารอสักครู่...', 'success');
+                    
+                    // ✅ เช็คว่ามีจุดไหม
+                    setTimeout(() => {
+                        const layerCount = window.surveyLayers?.getLayers?.().length || 0;
+                        console.log(`📊 จำนวนจุดบนแผนที่: ${layerCount}`);
+                        if (layerCount === 0) {
+                            showNotificationLeft('⚠️ ไม่พบจุดบนแผนที่ กรุณากด F5 รีเฟรชหน้า', 'warning');
+                        }
+                    }, 2000);
+                    
+                }, 5000);  // ✅ รอ 5 วิ ให้ Google Sheets บันทึกเสร็จ
+            } catch (err) {
+                progressTitle.textContent = `❌ ล้มเหลว`;
+                addLog(`❌ ข้อผิดพลาด: ${err.message}`, 'error');
+                console.error('Building import error:', err);
+            }
+        }
+
+        // ✅ ✅ ✅ ฟังก์ชันสร้างมาร์กเกอร์จากข้อมูลที่นำเข้า (แก้แล้ว) ✅ ✅ ✅
+        function createMarkerFromImport(data, type) {
+            if (!map || !data.lat_long) return null;
+            
+            // ✅ แปลง "lat, lng" → [lat, lng]
+            const coords = data.lat_long.split(',').map(c => parseFloat(c.trim()));
+            if (coords.length < 2 || isNaN(coords[0]) || isNaN(coords[1])) return null;
+            
+            const latlng = L.latLng(coords[0], coords[1]);
+            
+            // ✅ ✅ ✅ เช็คก่อน: ถ้ามีมาร์กเกอร์ที่พิกัดนี้แล้ว → ไม่ต้องสร้างใหม่ ✅ ✅ ✅
+            let markerExists = false;
+            surveyLayers.eachLayer(layer => {
+                if (layer.getLatLng && layer.getLatLng().equals(latlng)) {
+                    markerExists = true;
+                }
+            });
+            if (markerExists) {
+                console.log(`⏭️ ข้ามสร้างมาร์กเกอร์: ${data.building_c} (มีอยู่แล้วที่พิกัดนี้)`);
+                return null;
+            }
+            
+            // ✅ สร้างมาร์กเกอร์
+            const marker = L.marker(latlng, {
+                icon: type === 'building' 
+                    ? L.divIcon({ className: 'building-marker', html: '🏠' })
+                    : L.divIcon({ className: 'sign-marker', html: '🪧' }),
+                interactive: true  // ✅ ต้องเปิด!
+            });
+            
+            // ✅ ผูกป๊อปอัป
+            const popupContent = `
+                <div class="p-2 min-w-[180px]">
+                    <p class="font-bold text-sm">${type === 'building' ? 'สิ่งปลูกสร้าง' : 'ป้าย'}</p>
+                    <p class="text-[10px] text-gray-500">${data.building_c || data.s_code || ''}</p>
+                    <p class="text-[10px] text-gray-500">${data.lat_long}</p>
+                    <div class="mt-2 space-y-1">
+                        <button onclick="openEditPanel('${data.id || ''}', '${type}')" 
+                                class="w-full bg-blue-600 text-white text-[10px] py-1 rounded font-bold">
+                            แก้ข้อมูล
+                        </button>
+                        <button onclick="deleteRecord('${data.id || ''}', '${type}')" 
+                                class="w-full bg-red-600 text-white text-[10px] py-1 rounded font-bold">
+                            ลบจุด
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            marker.bindPopup(popupContent, {
+                minWidth: 180,
+                maxWidth: 220,
+                autoPan: false,
+                closeOnClick: true
+            });
+            
+            // ✅ เพิ่มลงเลเยอร์
+            marker.addTo(surveyLayers);
+            
+            return marker;
+        }
+
+        // ✅ ✅ ✅ ฟังก์ชันดาวน์โหลดรายงานข้อผิดพลาดเป็น CSV ✅ ✅ ✅
+        function downloadErrorReport(errorDetails) {
+            if (errorDetails.length === 0) return;
+            
+            const headers = ['row', 'building_c', 'error_message', 'error_type'];
+            const rows = errorDetails.map(err => [
+                err.row,
+                err.code || '',
+                err.message || '',
+                err.type || err.status || ''
+            ]);
+            
+            const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `error_report_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            addLog('✅ ดาวน์โหลดรายงานข้อผิดพลาดแล้ว', 'success');
+        }
+
+        // ✅ ✅ ✅ ฟังก์ชันแมปค่าแบบยืดหยุ่น (แก้แล้ว) ✅ ✅ ✅
+        function mapFieldValueFlexible(fieldId, rawValue) {
+            if (!rawValue || rawValue.toString().trim() === '') return '';
+            
+            const raw = rawValue.toString().trim();
+            const mappings = BUILDING_FIELD_MAPPINGS[fieldId];
+            
+            if (!mappings) return raw; // ไม่มีแมป → คืนค่าเดิม
+            
+            // ✅ 1. ค้นหาแบบตรงกันเป๊ะ (ตัดวงเล็บ/ช่องว่าง)
+            const cleanRaw = raw.replace(/[()]/g, '').trim();
+            if (mappings[cleanRaw]) return mappings[cleanRaw];
+            if (mappings[raw]) return mappings[raw];
+            
+            // ✅ 2. ค้นหาแบบมีส่วนของคำ
+            const rawLower = raw.toLowerCase().replace(/[()]/g, '');
+            for (const [key, value] of Object.entries(mappings)) {
+                const keyClean = key.toLowerCase().replace(/[()]/g, '');
+                if (rawLower.includes(keyClean) || keyClean.includes(rawLower)) {
+                    return value;
+                }
+            }
+            
+            // ✅ 3. กรณีพิเศษ: `1 - ไม้` → `ไม้`
+            if (fieldId === 'b_mat') {
+                if (raw.includes('ไม้')) return 'ไม้';
+                if (raw.includes('ตึก') || raw.includes('คอนกรีต') || raw.includes('ปูน')) return 'ตึก';
+                if (raw.includes('ผสม') || raw.includes('ครึ่ง')) return 'ตึก/ไม้';
+            }
+            
+            // ✅ 4. กรณีพิเศษ: `1`, `2`, `3` ใน b_year → คืนค่าเดิม
+            if (fieldId === 'b_year' && /^\d+$/.test(raw)) {
+                return raw;
+            }
+            
+            // ✅ ✅ ✅ แก้: ไม่เจอ → คืนค่าว่าง (ไม่ใช่ null) เพื่อให้กรอกคอลัมน์อื่นได้ ✅ ✅ ✅
+            return '';
+        }
+
+        // ✅ อัปเดตแถบความคืบหน้า
+        function updateBuildingDataProgress(current, stats) {
+            const percent = Math.round((current / stats.total) * 100);
+            document.getElementById('building-data-bar').style.width = `${percent}%`;
+            document.getElementById('building-data-percent').textContent = `${percent}%`;
+            document.getElementById('bd-success').textContent = stats.success;
+            document.getElementById('bd-skip').textContent = stats.skip;
+            document.getElementById('bd-error').textContent = stats.error;
+        }
+        
+        // ✅ ในฟังก์ชัน `getExistingBuildingCodes()` → แปลงเป็นใหญ่ทั้งหมด:
+        async function getExistingBuildingCodes() {
+            try {
+                const res = await fetch(`${SCRIPT_URL}?action=getData`);
+                const data = await res.json();
+                const codes = new Set();
+                if (data.buildings) {
+                    data.buildings.forEach(b => {
+                        if (b.building_c) {
+                            // ✅ แปลงเป็นใหญ่ทั้งหมดเพื่อเปรียบเทียบ
+                            codes.add(b.building_c.trim().toUpperCase());
+                        }
+                    });
+                }
+                return codes;
+            } catch {
+                return new Set();
+            }
+        }
+        
+        // ✅ ผูกเหตุการณ์กับปุ่มเลือกไฟล์
+        document.getElementById('building-data-file')?.addEventListener('change', function(e) {
+            if (e.target.files[0]) {
+                if (confirm(`นำเข้าข้อมูลจากไฟล์ "${e.target.files[0].name}"?\n\nข้อมูลจะถูกรองกรองและแมปให้ตรงกับฟอร์มอัตโนมัติ`)) {
+                    processBuildingImport(e.target.files[0]);
+                }
+                e.target.value = ''; // รีเซ็ต
+            }
+        });
+
+
+        // ✅ ✅ ✅ ฟังก์ชันแมปค่าสักษณะเนื้อหาป้าย (พิเศษ) ✅ ✅ ✅
+        function mapSCharacte(rawValue) {
+            if (!rawValue || rawValue.toString().trim() === '') return '';
+            
+            const raw = rawValue.toString().trim().toLowerCase();
+            
+            // ✅ 1. ลองแมปผ่าน SIGN_FIELD_MAPPINGS ก่อน
+            if (typeof SIGN_FIELD_MAPPINGS !== 'undefined' && SIGN_FIELD_MAPPINGS['s_characte']) {
+                const mappings = SIGN_FIELD_MAPPINGS['s_characte'];
+                
+                // ค้นหาแบบตรงกันเป๊ะ
+                if (mappings[raw]) return mappings[raw];
+                
+                // ค้นหาแบบมีส่วนของคำ
+                for (const [key, value] of Object.entries(mappings)) {
+                    if (raw.includes(key.toLowerCase())) {
+                        return value;
+                    }
+                }
+            }
+            
+            // ✅ 2. ถ้าไม่เจอ → ลองแยกเลข+ตัวอักษรอัตโนมัติ
+            // รูปแบบ: "1 ก", "1(ก)", "1ก", "2 ข", ฯลฯ
+            const match = raw.match(/([1-3])\s*[\(\)]?\s*([กข])[\)\)]?/);
+            if (match) {
+                const num = match[1];  // 1, 2, หรือ 3
+                const letter = match[2];  // ก หรือ ข
+                return `${num}(${letter})`;  // แปลงเป็นรูปแบบมาตรฐาน
+            }
+            
+            // ✅ 3. ไม่เจอรูปแบบใด → คืนค่าเดิม
+            return rawValue;
+        }
+
+        // ✅ ✅ ✅ ดึงรหัสป้ายที่มีอยู่แล้วจากเซิร์ฟเวอร์ ✅ ✅ ✅
+        async function getExistingSignCodes() {
+            try {
+                const res = await fetch(`${SCRIPT_URL}?action=getData`);
+                const data = await res.json();
+                const codes = new Set();
+                if (data.signs) {
+                    data.signs.forEach(s => {
+                        if (s.s_code) {
+                            codes.add(s.s_code.trim().toUpperCase());
+                        }
+                    });
+                }
+                return codes;
+            } catch {
+                return new Set();
+            }
+        }
+
+
+        // ✅ ✅ ✅ อัปเดตแถบความคืบหน้าการนำเข้าป้าย ✅ ✅ ✅
+        function updateSignDataProgress(current, stats) {
+            const bar = document.getElementById('sign-data-bar');
+            const pct = document.getElementById('sign-data-percent');
+            if (bar && pct && stats.total > 0) {
+                const p = Math.round((current / stats.total) * 100);
+                bar.style.width = `${p}%`;
+                pct.textContent = `${p}%`;
+            }
+            document.getElementById('sd-success').textContent = stats.success;
+            document.getElementById('sd-skip').textContent = stats.skip;
+            document.getElementById('sd-error').textContent = stats.error;
+        }
+
+        // ✅ ✅ ✅ ฟังก์ชันแมปค่าสักษณะเนื้อหาป้าย (พิเศษ) ✅ ✅ ✅
+        function mapSCharacte(rawValue) {
+            if (!rawValue || rawValue.toString().trim() === '') return '';
+            
+            const raw = rawValue.toString().trim().toLowerCase();
+            
+            // ✅ 1. ลองแมปผ่าน SIGN_FIELD_MAPPINGS ก่อน
+            if (typeof SIGN_FIELD_MAPPINGS !== 'undefined' && SIGN_FIELD_MAPPINGS['s_characte']) {
+                const mappings = SIGN_FIELD_MAPPINGS['s_characte'];
+                
+                // ค้นหาแบบตรงกันเป๊ะ
+                if (mappings[raw]) return mappings[raw];
+                
+                // ค้นหาแบบมีส่วนของคำ
+                for (const [key, value] of Object.entries(mappings)) {
+                    if (raw.includes(key.toLowerCase())) {
+                        return value;
+                    }
+                }
+            }
+            
+            // ✅ 2. ถ้าไม่เจอ → ลองแยกเลข+ตัวอักษรอัตโนมัติ
+            const match = raw.match(/([1-3])\s*[\(\)]?\s*([กข])[\)\)]?/);
+            if (match) {
+                const num = match[1];
+                const letter = match[2];
+                return `${num}(${letter})`;
+            }
+            
+            // ✅ 3. ไม่เจอรูปแบบใด → คืนค่าเดิม
+            return rawValue;
+        }
+
+        // ✅ ✅ ✅ เพิ่มบรรทัดนี้ ✅ ✅ ✅
+        const SIGN_FIELD_MAPPINGS = {};  // ← ว่างไว้ก่อนก็ได้ ถ้ายังไม่มีค่าที่จะแมป
+                
+        // ============================================
+        // ✅ ฟังก์ชันประมวลผลไฟล์นำเข้าข้อมูลป้าย
+        // ============================================
+        async function processSignImport(file) {
+            const stats = { success: 0, skip: 0, error: 0, total: 0 };
+            const errorDetails = [];
+            const progressDiv = document.getElementById('sign-data-progress');
+            const progressTitle = document.getElementById('sign-data-title');
+            
+            progressDiv.classList.remove('hidden');
+            progressTitle.textContent = 'กำลังอ่านไฟล์...';
+            
+            try {
+                // ✅ อ่านไฟล์ด้วย SheetJS (เหมือนเดิม)
+                // ✅ ✅ ✅ แก้ฟังก์ชันอ่านไฟล์ให้รองรับไทย ✅ ✅ ✅
+                const data = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const arrayBuffer = e.target.result;
+                            
+                            // ✅ ถ้าเป็นไฟล์ CSV → ใช้ TextDecoder ระบุ UTF-8 ชัดเจน
+                            if (file.name.toLowerCase().endsWith('.csv')) {
+                                const decoder = new TextDecoder('utf-8');  // ✅ ระบุ encoding
+                                const text = decoder.decode(arrayBuffer);
+                                
+                                // ✅ แบ่งบรรทัดและคอลัมน์แบบปลอดภัย
+                                const rows = text.split(/\r?\n/).map(line => {
+                                    // ✅ แบ่งโดยคำนึงถึงเครื่องหมายคำพูด (ป้องกันคอมม่าในข้อมูล)
+                                    const cols = [];
+                                    let current = '';
+                                    let inQuotes = false;
+                                    
+                                    for (let char of line) {
+                                        if (char === '"') {
+                                            inQuotes = !inQuotes;
+                                        } else if (char === ',' && !inQuotes) {
+                                            cols.push(current.trim());
+                                            current = '';
+                                        } else {
+                                            current += char;
+                                        }
+                                    }
+                                    cols.push(current.trim());
+                                    return cols;
+                                }).filter(row => row.length > 1 && row.some(c => c));
+                                
+                                resolve(rows);
+                            } 
+                            // ✅ ถ้าเป็น Excel (.xlsx/.xls) → ใช้ SheetJS ปกติ
+                            else {
+                                const workbook = XLSX.read(arrayBuffer, { 
+                                    type: 'array',
+                                    cellDates: false,
+                                    cellNF: false,
+                                    cellText: true,
+                                    raw: true,
+                                    codepage: 65001  // ✅ ระบุ UTF-8 codepage
+                                });
+                                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                                const rows = XLSX.utils.sheet_to_json(firstSheet, { 
+                                    header: 1, 
+                                    raw: true, 
+                                    defval: '' 
+                                });
+                                resolve(rows);
+                            }
+                        } catch (err) { reject(err); }
+                    };
+                    reader.onerror = () => reject(new Error('อ่านไฟล์ล้มเหลว'));
+                    reader.readAsArrayBuffer(file);  // ✅ อ่านเป็น ArrayBuffer เพื่อควบคุม encoding
+                });
+                
+                if (data.length < 2) throw new Error('ไฟล์ไม่มีข้อมูล');
+                
+                const headers = data[0].map(h => String(h).trim().toLowerCase());
+                const rows = data.slice(1).filter(row => row.some(cell => cell));
+                
+                stats.total = rows.length;
+                progressTitle.textContent = `กำลังประมวลผล ${stats.total} รายการ...`;
+                
+                // ✅ ดึงรหัสป้ายที่มีอยู่แล้ว
+                const existingCodes = await getExistingSignCodes();
+                
+                // ✅ ประมวลผลทีละแถว
+                for (let i = 0; i < rows.length; i++) {
+                    const row = rows[i];
+                    const rowData = {};
+                    
+                    // ✅ แมปคอลัมน์จากไฟล์ → ข้อมูลภายใน
+                    // ✅ แมปคอลัมน์จากไฟล์ → ข้อมูลภายใน
+                    headers.forEach((header, idx) => {
+                        const value = row[idx];
+                        if (value === undefined || value === null || value.toString().trim() === '') return;
+                        
+                        // ✅ 1. หา fieldId จากชื่อคอลัมน์ในไฟล์
+                        const fieldMap = {
+                            's_code': 's_code', 'รหัสป้าย': 's_code', 'code': 's_code',
+                            'parcel_cod': 'parcel_cod', 'รหัสแปลง': 'parcel_cod',
+                            's_name': 's_name', 'ชื่อป้าย': 's_name',
+                            's_type': 's_type', 'ประเภท': 's_type',
+                            's_characte': 's_characte', 'ลักษณะ': 's_characte',
+                            's_wide': 's_wide', 'กว้าง': 's_wide',
+                            's_length': 's_length', 'ยาว': 's_length',
+                            'no_side': 'no_side', 'จำนวนด้าน': 'no_side',
+                            's_text': 's_text', 'ข้อความ': 's_text',
+                            'comment': 'comment', 'หมายเหตุ': 'comment',
+                            'title': 'title', 'คำนำหน้า': 'title',
+                            'fname': 'fname', 'ชื่อ': 'fname',
+                            'lname': 'lname', 'นามสกุล': 'lname',
+                            'full_name': 'full_name', 'เจ้าของ': 'full_name',
+                            'address': 'address', 'ที่อยู่': 'address',
+                            'image': 'image', 'picture': 'picture',
+                            'check': 'check', 'สถานะ': 'check',
+                            'lat_long': 'lat_long', 'พิกัด': 'lat_long',
+                            'date_added': 'date_added', 'update': 'update', 'id': 'id'
+                        };
+                        
+                        const fieldId = fieldMap[header];
+                        if (!fieldId) return;  // ถ้าไม่ตรงกับที่แมป → ข้าม
+                        
+                        let rawValue = String(value).trim();
+                        let finalValue = rawValue;
+                        
+                        // ✅ 2. จัดการรหัสป้ายพิเศษ (s_code)
+                        if (fieldId === 's_code') {
+                            // เช็ค Scientific Notation (เช่น 1.2E+5)
+                            if (/^[0-9.]+[eE][+-]?[0-9]+$/.test(rawValue)) {
+                                const num = parseFloat(rawValue);
+                                finalValue = String(Math.floor(num));
+                            }
+                            // ทำเป็นตัวพิมพ์ใหญ่
+                            finalValue = finalValue.toUpperCase();
+                            
+                            if (/^[A-Z0-9]+-[A-Z0-9]+$/.test(finalValue)) {
+                                console.log(`✅ รหัสป้ายพิเศษ: ${finalValue} → ใช้ค่าเดิม`);
+                            }
+                        }
+                        
+                        // ✅ 2.1 จัดการ s_characte (ตัดข้อความในวงเล็บ)
+                        if (fieldId === 's_characte') {
+                            finalValue = mapSCharacte(rawValue);
+                            console.log(`🔄 s_characte: "${rawValue}" → "${finalValue}"`);
+                        }
+                        
+                        // ✅ 3. บันทึกค่าลง rowData
+                        rowData[fieldId] = finalValue;
+                    });
+                    
+                    // ✅ สร้าง full_name อัตโนมัติถ้าไม่มี
+                    if (!rowData.full_name && (rowData.title || rowData.fname || rowData.lname)) {
+                        const parts = [rowData.title, rowData.fname, rowData.lname].filter(v => v?.trim());
+                        if (parts.length > 0) rowData.full_name = parts.join(' | ');
+                    }
+                    
+                    // ✅ ✅ ✅ ข้อ 2: ถ้าไม่มี parcel_cod → ดึง 6 ตัวแรกของ s_code ✅ ✅ ✅
+                    if (!rowData.parcel_cod || rowData.parcel_cod.trim() === '') {
+                        if (rowData.s_code && rowData.s_code.length >= 6) {
+                            rowData.parcel_cod = rowData.s_code.substring(0, 6);
+                            console.log(`✅ Auto-fill parcel_cod: "${rowData.parcel_cod}" จาก s_code: "${rowData.s_code}"`);
+                        }
+                    }
+                    
+                    // ✅ ตรวจสอบ s_code
+                    if (!rowData.s_code || rowData.s_code.trim() === '') {
+                        stats.error++;
+                        errorDetails.push({ row: i+1, code: 'NO_S_CODE', message: 'ไม่มี s_code' });
+                        updateSignDataProgress(i + 1, stats);
+                        continue;
+                    }
+                    
+                    // ✅ เช็คซ้ำ
+                    if (existingCodes.has(rowData.s_code.trim().toUpperCase())) {
+                        stats.skip++;
+                        updateSignDataProgress(i + 1, stats);
+                        continue;
+                    }
+                    
+                    // ✅ ✅ ✅ ข้อ 1: สร้างค่าอัตโนมัติ ✅ ✅ ✅
+                    const now = formatThaiDateTimeBE(new Date());
+                    rowData.date_added = now;
+                    rowData.update = now;
+                    rowData.id = `sign_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+                    
+                    // ✅ ส่งข้อมูลไปบันทึก
+                    try {
+                        const formData = new FormData();
+                        formData.append('action', 'quickAdd');
+                        formData.append('type', 'sign');
+                        formData.append('payload', JSON.stringify(rowData));
+                        
+                        const res = await fetch(SCRIPT_URL.trim(), { method: 'POST', body: formData });
+                        const result = await res.json();
+                        
+                        if (result.status === 200) {
+                            stats.success++;
+                            if (i < 3) addLog(`✅ แถว ${i+1}: บันทึกสำเร็จ ${rowData.s_code}`, 'success');
+                        } else {
+                            stats.error++;
+                            errorDetails.push({ row: i+1, code: rowData.s_code, message: result.message || 'Unknown error', status: result.status });
+                        }
+                    } catch (err) {
+                        stats.error++;
+                        errorDetails.push({ row: i+1, code: rowData.s_code, message: err.message, type: 'network_error' });
+                    }
+                    
+                    updateSignDataProgress(i + 1, stats);
+                    if (i % 10 === 0) await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                // ✅ สรุปผล + รีเฟรชแผนที่ (เหมือนเดิม)
+                progressTitle.textContent = `✅ เสร็จสิ้น!`;
+                const msg = `นำเข้าป้ายสำเร็จ: ${stats.success}/${stats.total} รายการ`;
+                if (stats.error > 0) {
+                    addLog(`⚠️ ${msg} (ข้าม: ${stats.skip}, ผิดพลาด: ${stats.error})`, 'warning');
+                } else {
+                    addLog(`✅ ${msg} (ข้าม: ${stats.skip})`, 'success');
+                }
+                
+                // ✅ รีเฟรชแผนที่หลังนำเข้าเสร็จ
+                setTimeout(() => {
+                    if (window.markersBeingMoved) markersBeingMoved.clear();
+                    if (typeof refreshData === 'function') refreshData(true);
+                    showNotificationLeft('✅ นำเข้าป้ายเสร็จสิ้น! กำลังอัปเดต...', 'success');
+                }, 5000);
+                
+            } catch (err) {
+                progressTitle.textContent = `❌ ล้มเหลว`;
+                addLog(`❌ ข้อผิดพลาด: ${err.message}`, 'error');
+                console.error('Sign import error:', err);
+            }
+        }
+
+        // ✅ อัปเดตความคืบหน้า
+        function updateSignDataProgress(current, stats) {
+            const bar = document.getElementById('sign-data-bar');
+            const pct = document.getElementById('sign-data-percent');
+            if (bar && pct && stats.total > 0) {
+                const p = Math.round((current / stats.total) * 100);
+                bar.style.width = `${p}%`;
+                pct.textContent = `${p}%`;
+            }
+            document.getElementById('sd-success').textContent = stats.success;
+            document.getElementById('sd-skip').textContent = stats.skip;
+            document.getElementById('sd-error').textContent = stats.error;
+        }
+        
+
+        // ✅ ผูกเหตุการณ์กับปุ่มเลือกไฟล์ข้อมูลป้าย
+        document.getElementById('sign-data-file')?.addEventListener('change', function(e) {
+            if (e.target.files[0]) {
+                if (confirm(`นำเข้าข้อมูลป้ายจากไฟล์ "${e.target.files[0].name}"?\n\nข้อมูลจะถูกรองกรองและแมปให้ตรงกับฟอร์มอัตโนมัติ`)) {
+                    processSignImport(e.target.files[0]);
+                }
+                e.target.value = ''; // รีเซ็ต
+            }
+        });
+            
+    </script>
+</body>
+</html>
