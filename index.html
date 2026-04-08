@@ -8,9 +8,13 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="โนนไทย">
     <meta name="theme-color" content="#2563eb">
-
     <meta name="theme-color" content="#2563eb">
     <title>โนนไทย</title>
+
+    <!-- ✅ ✅ ✅ เพิ่มบรรทัดเหล่านี้! ✅ ✅ ✅ -->
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="static/icons/lb.ico" type="image/x-icon"> <!-- แก้เป็นพาธสัมพัทธ์ -->
     <!-- ใช้ Turf.js สำหรับคำนวณพื้นที่ (ต้องเพิ่มก่อนโค้ดอื่นๆ) -->
@@ -509,6 +513,17 @@
         <div id="fullscreen-filename" class="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm bg-black/50 px-4 py-2 rounded-full"></div>
     </div>
 
+    <!-- ✅ ✅ ✅ เพิ่มบรรทัดนี้ก่อน </body> ✅ ✅ ✅ -->
+    <script src="script.js"></script>
+    
+    <!-- ✅ ลงทะเบียน Service Worker (ถ้ามี) -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(reg => console.log('✅ Service Worker registered'))
+                .catch(err => console.log('❌ Service Worker failed:', err));
+        }
+    </script>
 </body>
 
 </html>
